@@ -29,6 +29,9 @@ def _load(name):
 
 
 def _kr_pykrx(index_code, suffix):
+    import os
+    if not os.environ.get("KRX_ID"):
+        raise ValueError("KRX_ID 없음 — 건너뜀")
     from pykrx import stock
 
     codes = stock.get_index_portfolio_deposit_file(index_code)
@@ -42,9 +45,13 @@ def _kr_pykrx(index_code, suffix):
 def _kospi200_naver():
     rows, seen = [], set()
     for page in range(1, 25):
-        html = requests.get(
-            f"https://finance.naver.com/sise/entryJongmok.naver?type=KPI200&page={page}", headers=UA, timeout=20
-        ).content.decode("euc-kr", "ignore")
+        r = requests.get(
+            f"https://finance.naver.com/sise/entryJongmok.naver?type=KPI200&page={page}",
+            headers={**UA, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36",
+                     "Referer": "https://finance.naver.com/sise/sise_index.naver?code=KPI200"}, timeout=20)
+        if page == 1:
+            print(f"  naver HTTP {r.status_code}, {len(r.content)} bytes")
+        html = r.content.decode("euc-kr", "ignore")
         found = re.findall(r'code=(\d{6})"[^>]*>([^<]+)<', html)
         new = [(c, n.strip()) for c, n in found if c not in seen]
         if not new:
@@ -55,6 +62,36 @@ def _kospi200_naver():
     if len(rows) < 150:
         raise ValueError(f"네이버 {len(rows)}개")
     return pd.DataFrame(rows)
+
+
+ETF_WORDS = ("KODEX", "TIGER", "KBSTAR", "RISE", "ACE", "SOL", "HANARO", "KOSEF", "ARIRANG", "PLUS", "KIWOOM",
+             "TIMEFOLIO", "스팩", "ETN", "리츠")
+
+
+def _naver_mcap_top(sosok, n, suffix):
+    """네이버 시가총액 순위 상위 n개 (보통주만). KRX 로그인 없이 지수 구성종목을 근사."""
+    rows, seen = [], set()
+    hdr = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36"}
+    for page in range(1, 15):
+        r = requests.get(f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}",
+                         headers=hdr, timeout=20)
+        if page == 1:
+            print(f"  naver 시총순위 HTTP {r.status_code}, {len(r.content)} bytes")
+        html = r.content.decode("euc-kr", "ignore")
+        found = re.findall(r'code=(\d{6})"[^>]*class="tltle"[^>]*>([^<]+)<', html)
+        if not found:
+            break
+        for c, nm in found:
+            nm = nm.strip()
+            if c in seen or not c.endswith("0") or any(w in nm.upper() for w in ETF_WORDS):
+                continue  # 우선주·ETF·스팩·리츠 제외
+            seen.add(c)
+            rows.append({"code": c, "symbol": f"{c}{suffix}", "name": nm, "sector": ""})
+        if len(rows) >= n:
+            break
+    if len(rows) < n * 0.8:
+        raise ValueError(f"네이버 시총순위 {len(rows)}개")
+    return pd.DataFrame(rows[:n])
 
 
 def _wiki(url, key_col):
@@ -93,8 +130,10 @@ def _ndx():
 
 
 SOURCES = {
-    "KOSPI200": [("pykrx", lambda: _kr_pykrx("1028", ".KS")), ("naver", _kospi200_naver)],
-    "KOSDAQ150": [("pykrx", lambda: _kr_pykrx("2203", ".KQ"))],
+    "KOSPI200": [("pykrx", lambda: _kr_pykrx("1028", ".KS")), ("naver", _kospi200_naver),
+                 ("naver 시총 상위 200 (근사)", lambda: _naver_mcap_top(0, 200, ".KS"))],
+    "KOSDAQ150": [("pykrx", lambda: _kr_pykrx("2203", ".KQ")),
+                  ("naver 시총 상위 150 (근사)", lambda: _naver_mcap_top(1, 150, ".KQ"))],
     "NASDAQ100": [("wikipedia", _ndx)],
     "SP500": [("wikipedia", _sp500)],
 }
