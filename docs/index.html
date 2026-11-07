@@ -102,6 +102,9 @@ aside.on{transform:none}
 }
 .ftd{display:inline-block;margin-top:3px;font-size:11.5px;color:var(--muted,#888)}
 .ftd.ftd{color:#1a9c5b;font-weight:600}.ftd.falling{color:#d04545}.ftd.rally{color:#c08a12}
+.tvlink{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
+.tvlink:hover{color:var(--accent,#2962ff)}.tvi{font-size:10px;margin-left:3px;opacity:.6}
+.dbtns{display:flex;gap:6px;align-items:flex-start}.tvbtn{text-decoration:none;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -137,7 +140,7 @@ aside.on{transform:none}
 
 <div class="scrim" id="scrim"></div>
 <aside id="drawer" aria-hidden="true">
-  <div class="dh"><div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div><button class="btn" id="dClose">닫기</button></div>
+  <div class="dh"><div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div><div class="dbtns"><a class="btn tvbtn" id="dTv" target="_blank" rel="noopener">TradingView ↗</a><button class="btn" id="dClose">닫기</button></div></div>
   <div class="db" id="dBody"></div>
 </aside>
 
@@ -223,6 +226,8 @@ function dots(s){
     return `<span class="dot ${st}" title="${esc(c.label)}">${k}</span>`}).join('')+'</span>';
 }
 
+const tvUrl = (s, mkt) => 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent(
+  (mkt||(/\.(KS|KQ)$/.test(s.symbol)?'KR':'US'))==='KR' ? 'KRX:'+s.code : s.symbol.replace(/-/g,'.'));
 function render(){
   const b = S.data.indexes[S.idx]; if(!b) return;
   const q=$('#q').value.trim().toLowerCase(), gr=$('#grade').value, hide=$('#hideOut').checked, onlyNew=$('#onlyNew').checked;
@@ -235,7 +240,7 @@ function render(){
   const cur = b.market==='KR'?'KRW':'USD';
   $('#tbody').innerHTML = rows.length ? rows.map(s=>`<tr data-s="${esc(s.symbol)}">
     <td class="mono">${s.rank}</td>
-    <td class="l"><span class="nm">${esc(s.name||s.symbol)}</span><span class="sym mono">${esc(s.code)}</span>${s.new?'<span class="new">NEW</span>':''}</td>
+    <td class="l"><a class="nm tvlink" href="${tvUrl(s,b.market)}" target="_blank" rel="noopener" title="TradingView 차트 열기">${esc(s.name||s.symbol)}<span class="tvi">↗</span></a><span class="sym mono">${esc(s.code)}</span>${s.new?'<span class="new">NEW</span>':''}</td>
     <td><span class="score"><span class="mono">${s.score.toFixed(0)}</span><span class="sbar"><i style="width:${s.score}%"></i></span></span></td>
     <td class="l"><span class="grade g-${s.grade.replace(' ','')}">${s.grade}</span></td>
     <td class="l">${dots(s)}</td>
@@ -253,7 +258,7 @@ function render(){
 ['#q','#grade','#hideOut','#onlyNew'].forEach(s=>$(s).addEventListener('input',render));
 $('#thead').onclick = e => { const th=e.target.closest('th'); if(!th||!th.dataset.k) return; const k=th.dataset.k;
   S.sort = {k, dir: S.sort.k===k ? -S.sort.dir : (['rank','name','grade'].includes(k)?1:-1)}; render(); };
-$('#tbody').onclick = e => { const tr=e.target.closest('tr[data-s]'); if(tr) openDetail(tr.dataset.s); };
+$('#tbody').onclick = e => { if(e.target.closest('a')) return; const tr=e.target.closest('tr[data-s]'); if(tr) openDetail(tr.dataset.s); };
 
 function finChart(a, cur){
   const rows=a.filter(x=>x.revenue!=null); if(rows.length<2) return '';
@@ -284,6 +289,7 @@ async function openDetail(sym){
   if(!S.details){ try{ S.details = await (await fetch('data/details.json',{cache:'no-store'})).json(); }catch(e){ S.details={}; } }
   const d=S.details[sym]||{}, cur = s.currency || (b.market==='KR'?'KRW':'USD'), ai=d.ai;
   $('#dTitle').textContent = s.name||sym;
+  $('#dTv').href = tvUrl(s, b.market);
   $('#dSub').innerHTML = `<span class="mono">${esc(s.code)}</span> · ${esc(s.sector||'')}${s.industry?' / '+esc(s.industry):''}`;
   const groups=[...new Set(s.checks.map(c=>c.group))];
   const fmtv = c => c.value==null ? '' : (c.key==='L'? c.value : c.key==='S'? c.value.toFixed(2) : c.key==='H2'? ((c.value>0?'+':'')+(c.value*100).toFixed(1)+'%p') : pct(c.value));
