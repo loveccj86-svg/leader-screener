@@ -1,0 +1,59 @@
+name: 주도주 스크리너
+
+on:
+  schedule:
+    - cron: "40 7 * * 1-5"    # 한국 장 마감 후 16:40 KST (월~금)
+    - cron: "40 21 * * 1-5"   # 미국 장 마감 후 06:40 KST (화~토)
+  workflow_dispatch:
+    inputs:
+      markets:
+        description: "KR, US 또는 KR,US"
+        default: "KR,US"
+      full:
+        description: "재무 전체 갱신 (첫 실행 시 true)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screener
+  cancel-in-progress: false
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 대상 시장 결정
+        id: m
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "markets=${{ inputs.markets }}" >> "$GITHUB_OUTPUT"
+            echo "full=${{ inputs.full && '--full' || '' }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "40 7 * * 1-5" ]; then
+            echo "markets=KR" >> "$GITHUB_OUTPUT"
+          else
+            echo "markets=US" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 스크리닝 실행
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m screener.main --markets "${{ steps.m.outputs.markets }}" ${{ steps.m.outputs.full }}
+      - name: 결과 커밋
+        run: |
+          git config user.name "screener-bot"
+          git config user.email "screener-bot@users.noreply.github.com"
+          git add docs/data data
+          git diff --cached --quiet || git commit -m "스크리닝 결과 $(date -u +%F) ${{ steps.m.outputs.markets }}"
+          git pull --rebase -X ours || true
+          git push
