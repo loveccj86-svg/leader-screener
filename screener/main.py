@@ -128,8 +128,14 @@ def main():
     prev = read_json(LATEST, {})
     out = {"generated": None, "markets": dict(prev.get("markets", {})), "indexes": dict(prev.get("indexes", {}))}
     details = read_json(DOCS_DATA / "details.json", {})
+    failed = []
     for mkt in [m.strip().upper() for m in args.markets.split(",") if m.strip()]:
-        mb, idx, det = run_market(mkt, cfg, prev, args.full)
+        try:
+            mb, idx, det = run_market(mkt, cfg, prev, args.full)
+        except Exception as e:  # noqa: BLE001  한 시장이 실패해도 나머지는 진행
+            print(f"\n!!! {mkt} 실패: {e}")
+            failed.append(mkt)
+            continue
         out["markets"][mkt] = mb
         out["indexes"].update(idx)
         details.update(det)
@@ -143,6 +149,8 @@ def main():
     write_json(LATEST, out)
     write_json(DOCS_DATA / "details.json", details)
     print("\n저장 완료:", LATEST)
+    if failed:
+        raise SystemExit(f"실패한 시장: {', '.join(failed)} (위 로그 참고)")
 
 
 if __name__ == "__main__":
