@@ -40,6 +40,12 @@ def run_market(mkt, cfg, prev, full=False):
     else:
         base = pd.Timestamp(mcfg["base_date"])
         base_mode = "수동 지정"
+    # 팔로스루데이 확인 시 새 장세로 자동 전환 (고점 대비 하락폭이 기준 이상일 때만)
+    if mcfg.get("base_auto_ftd") and mcfg["base_index"] in px:
+        fs = prices.ftd_state(px[mcfg["base_index"]])
+        if fs["ftd"] and fs["dd"] <= cfg["thresholds"].get("ftd_new_cycle_dd", -0.2) and pd.Timestamp(fs["low_date"]) > base:
+            base = pd.Timestamp(fs["low_date"])
+            base_mode = f"자동 전환 (팔로스루데이 {fs['ftd']['date']})"
     print(f"장세 시작일: {base.date()} ({base_mode})")
 
     rows = []
