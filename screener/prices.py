@@ -1,0 +1,152 @@
+"""시세 수집(yfinance)과 가격 기반 지표 계산"""
+import time
+
+import numpy as np
+import pandas as pd
+
+
+def _norm(d):
+    d = d.copy()
+    idx = pd.to_datetime(d.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    d.index = idx.normalize()
+    return d.dropna(subset=["Close"])
+
+
+def download(symbols, period="3y", chunk=80, pause=2.0):
+    import yfinance as yf
+
+    out = {}
+    symbols = list(dict.fromkeys(symbols))
+    for i in range(0, len(symbols), chunk):
+        part = symbols[i : i + chunk]
+        df = None
+        for attempt in range(3):
+            try:
+                df = yf.download(
+                    part, period=period, interval="1d", auto_adjust=True,
+                    group_by="ticker", threads=True, progress=False,
+                )
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(5 * (attempt + 1))
+        if df is None or df.empty:
+            continue
+        multi = isinstance(df.columns, pd.MultiIndex)
+        lv0 = set(df.columns.get_level_values(0)) if multi else set()
+        for s in part:
+            try:
+                d = df[s] if multi and s in lv0 else (df if not multi and len(part) == 1 else None)
+            except KeyError:
+                d = None
+            if d is None or "Close" not in d:
+                continue
+            d = _norm(d)
+            if len(d) >= 60:
+                out[s] = d
+        time.sleep(pause)
+    return out
+
+
+def auto_base_date(index_df, lookback=250):
+    c = index_df["Close"].iloc[-lookback:]
+    return c.idxmin()
+
+
+def _ret(c, n):
+    return c.iloc[-1] / c.iloc[-n - 1] - 1 if len(c) > n else np.nan
+
+
+def price_metrics(d, base_date):
+    c, v = d["Close"], d["Volume"].fillna(0)
+    last = float(c.iloc[-1])
+    r3, r6, r9, r12 = (_ret(c, n) for n in (63, 126, 189, 252))
+    parts = [(0.4, r3), (0.2, r6), (0.2, r9), (0.2, r12)]
+    avail = [(w, r) for w, r in parts if not np.isnan(r)]
+    rs_raw = sum(w * r for w, r in avail) / sum(w for w, _ in avail) if avail else np.nan
+
+    hi52 = float(c.iloc[-252:].max())
+    since = c[c.index >= base_date]
+    if len(since):
+        mom = last / float(since.iloc[0]) - 1
+        cyc_hi = float(since.max())
+        cyc_dd = last / cyc_hi - 1
+    else:
+        mom = cyc_hi = cyc_dd = np.nan
+    prev = c[c.index < base_date]
+    pre1y = float(prev.iloc[-1] / prev.iloc[-253] - 1) if len(prev) > 253 else np.nan
+
+    wk = c.resample("W-FRI").last().dropna()
+    w10 = wk.rolling(10).mean().iloc[-1] if len(wk) >= 10 else np.nan
+    w40 = wk.rolling(40).mean().iloc[-1] if len(wk) >= 40 else np.nan
+    ma50 = c.rolling(50).mean().iloc[-1]
+    ma200 = c.rolling(200).mean().iloc[-1] if len(c) >= 200 else np.nan
+
+    chg = c.diff().iloc[-50:]
+    vv = v.iloc[-50:]
+    down_vol = vv[chg < 0].sum()
+    ud = vv[chg > 0].sum() / down_vol if down_vol > 0 else np.nan
+    avg50 = v.iloc[-51:-1].mean()
+    vol_ratio = float(v.iloc[-1] / avg50) if avg50 > 0 else np.nan
+
+    spark = wk.iloc[-52:]
+    return {
+        "price": last,
+        "asof": c.index[-1].strftime("%Y-%m-%d"),
+        "chg1d": _ret(c, 1),
+        "r3m": r3, "r6m": r6, "r12m": r12,
+        "rs_raw": rs_raw,
+        "hi52": hi52,
+        "from_hi52": last / hi52 - 1,
+        "mom_base": mom,
+        "cycle_high": cyc_hi,
+        "cycle_dd": cyc_dd,
+        "pre_base_1y": pre1y,
+        "w10_gt_w40": bool(w10 > w40) if not (np.isnan(w10) or np.isnan(w40)) else None,
+        "above_ma50": bool(last > ma50) if not np.isnan(ma50) else None,
+        "above_ma200": bool(last > ma200) if not np.isnan(ma200) else None,
+        "ud_ratio": ud,
+        "vol_ratio": vol_ratio,
+        "weekly": [round(float(x), 4) for x in spark.values],
+        "weekly_dates": [x.strftime("%Y-%m-%d") for x in spark.index],
+    }
+
+
+def market_state(name, d):
+    """CAN SLIM M + 신영 신호(2) 큰 상승/하락일 균형 + 분산일"""
+    c, v = d["Close"], d["Volume"].fillna(0)
+    last = float(c.iloc[-1])
+    ma50 = float(c.rolling(50).mean().iloc[-1])
+    ma200 = float(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else np.nan
+    hi52 = float(c.iloc[-252:].max())
+    r = c.pct_change()
+    sigma = r.iloc[-378:-126].std() if len(r) > 378 else r.iloc[:-126].std()
+    recent = r.iloc[-126:]
+    big_up = int((recent > 3 * sigma).sum()) if sigma and not np.isnan(sigma) else None
+    big_dn = int((recent < -3 * sigma).sum()) if sigma and not np.isnan(sigma) else None
+    dist = 0
+    if v.iloc[-25:].sum() > 0:
+        for i in range(len(c) - 25, len(c)):
+            if r.iloc[i] <= -0.002 and v.iloc[i] > v.iloc[i - 1]:
+                dist += 1
+    else:
+        dist = None
+    above50, above200 = last > ma50, (last > ma200 if not np.isnan(ma200) else None)
+    if above50 and above200:
+        status, label = "up", "상승 추세"
+    elif not above50 and above200 is False:
+        status, label = "down", "하락 추세"
+    else:
+        status, label = "pressure", "조정/압박"
+    return {
+        "name": name,
+        "close": last,
+        "asof": c.index[-1].strftime("%Y-%m-%d"),
+        "chg1d": float(r.iloc[-1]),
+        "ma50": ma50, "ma200": ma200,
+        "from_hi52": last / hi52 - 1,
+        "big_up_6m": big_up, "big_down_6m": big_dn,
+        "dist_days_25": dist,
+        "status": status, "label": label,
+    }

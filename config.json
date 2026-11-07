@@ -1,0 +1,41 @@
+{
+  "_comment": "base_date = 장세 시작일(지수 바닥). 현재 장세는 2025.4 관세 쇼크 바닥에서 시작. 이번 하락의 바닥을 확인하면 그 날짜로 바꿀 것. 'auto' = 최근 1년 지수 최저 종가일",
+  "markets": {
+    "KR": {
+      "base_date": "2025-04-09",
+      "base_index": "^KS11",
+      "m_indexes": {"KOSPI": "^KS11", "KOSDAQ": "^KQ11"},
+      "indexes": ["KOSPI200", "KOSDAQ150"]
+    },
+    "US": {
+      "base_date": "2025-04-08",
+      "base_index": "^GSPC",
+      "m_indexes": {"NASDAQ": "^IXIC", "S&P500": "^GSPC"},
+      "indexes": ["NASDAQ100", "SP500"]
+    }
+  },
+  "thresholds": {
+    "c_eps_yoy": 0.25,
+    "a_eps_cagr": 0.25,
+    "a_roe": 0.17,
+    "n_from_high": -0.15,
+    "s_ud_ratio": 1.0,
+    "l_rs": 80,
+    "i_inst": 0.30,
+    "db_cycle_dd": -0.30,
+    "db_mom_top_pct": 5,
+    "hana_rev_growth": 0.20
+  },
+  "commodity_industries": [
+    "Steel", "Chemicals", "Specialty Chemicals", "Oil & Gas Refining & Marketing",
+    "Building Materials", "Aluminum", "Copper", "Other Industrial Metals & Mining",
+    "Paper & Paper Products", "Coking Coal", "Marine Shipping", "Agricultural Inputs"
+  ],
+  "commodity_symbols": ["005930.KS", "000660.KS", "MU", "WDC", "STX", "SNDK"],
+  "fundamental_refresh_days": 7,
+  "max_fundamental_refresh_per_run": 400,
+  "ai_top_n_per_index": 10,
+  "ai_refresh_days": 7,
+  "ai_model": "claude-haiku-5-5",
+  "list_top_n": 200
+}
