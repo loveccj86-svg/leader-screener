@@ -4,14 +4,28 @@
     "KR": {
       "base_date": "2025-04-09",
       "base_index": "^KS11",
-      "m_indexes": {"KOSPI": "^KS11", "KOSDAQ": "^KQ11"},
-      "indexes": ["KOSPI200", "KOSDAQ150"]
+      "m_indexes": {
+        "KOSPI": "^KS11",
+        "KOSDAQ": "^KQ11"
+      },
+      "indexes": [
+        "KOSPI200",
+        "KOSDAQ150"
+      ],
+      "base_auto_ftd": true
     },
     "US": {
       "base_date": "2025-04-08",
       "base_index": "^GSPC",
-      "m_indexes": {"NASDAQ": "^IXIC", "S&P500": "^GSPC"},
-      "indexes": ["NASDAQ100", "SP500"]
+      "m_indexes": {
+        "NASDAQ": "^IXIC",
+        "S&P500": "^GSPC"
+      },
+      "indexes": [
+        "NASDAQ100",
+        "SP500"
+      ],
+      "base_auto_ftd": true
     }
   },
   "thresholds": {
@@ -21,17 +35,34 @@
     "n_from_high": -0.15,
     "s_ud_ratio": 1.0,
     "l_rs": 80,
-    "i_inst": 0.30,
-    "db_cycle_dd": -0.30,
+    "i_inst": 0.3,
+    "db_cycle_dd": -0.3,
     "db_mom_top_pct": 5,
-    "hana_rev_growth": 0.20
+    "hana_rev_growth": 0.2,
+    "ftd_new_cycle_dd": -0.2
   },
   "commodity_industries": [
-    "Steel", "Chemicals", "Specialty Chemicals", "Oil & Gas Refining & Marketing",
-    "Building Materials", "Aluminum", "Copper", "Other Industrial Metals & Mining",
-    "Paper & Paper Products", "Coking Coal", "Marine Shipping", "Agricultural Inputs"
+    "Steel",
+    "Chemicals",
+    "Specialty Chemicals",
+    "Oil & Gas Refining & Marketing",
+    "Building Materials",
+    "Aluminum",
+    "Copper",
+    "Other Industrial Metals & Mining",
+    "Paper & Paper Products",
+    "Coking Coal",
+    "Marine Shipping",
+    "Agricultural Inputs"
   ],
-  "commodity_symbols": ["005930.KS", "000660.KS", "MU", "WDC", "STX", "SNDK"],
+  "commodity_symbols": [
+    "005930.KS",
+    "000660.KS",
+    "MU",
+    "WDC",
+    "STX",
+    "SNDK"
+  ],
   "fundamental_refresh_days": 7,
   "max_fundamental_refresh_per_run": 400,
   "ai_top_n_per_index": 10,
