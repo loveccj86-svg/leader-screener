@@ -68,23 +68,64 @@ ETF_WORDS = ("KODEX", "TIGER", "KBSTAR", "RISE", "ACE", "SOL", "HANARO", "KOSEF"
              "TIMEFOLIO", "스팩", "ETN", "리츠")
 
 
-def _naver_mcap_top(sosok, n, suffix):
-    """네이버 시가총액 순위 상위 n개 (보통주만). KRX 로그인 없이 지수 구성종목을 근사."""
+BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/124.0 Safari/537.36", "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"}
+
+
+def _decode(content):
+    head = content[:5000].lower()
+    return content.decode("utf-8" if b"utf-8" in head else "euc-kr", "ignore")
+
+
+def _keep(code, name):
+    return code.endswith("0") and not any(w in name.upper() for w in ETF_WORDS)  # 우선주·ETF·스팩·리츠 제외
+
+
+def _naver_api_top(market, n, suffix):
+    """네이버 모바일 증권 JSON (시가총액순)"""
     rows, seen = [], set()
-    hdr = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36"}
+    for page in range(1, 8):
+        r = requests.get(f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=100",
+                         headers=BROWSER, timeout=20)
+        if page == 1:
+            print(f"  naver api {market} HTTP {r.status_code}, {len(r.content)} bytes")
+        items = (r.json() or {}).get("stocks") or []
+        if not items:
+            break
+        for it in items:
+            c, nm = str(it.get("itemCode", "")), str(it.get("stockName", "")).strip()
+            if it.get("stockEndType") not in (None, "stock") or c in seen or not re.fullmatch(r"\d{6}", c) or not _keep(c, nm):
+                continue
+            seen.add(c)
+            rows.append({"code": c, "symbol": f"{c}{suffix}", "name": nm, "sector": ""})
+        if len(rows) >= n:
+            break
+    if len(rows) < n * 0.8:
+        raise ValueError(f"네이버 api {len(rows)}개")
+    return pd.DataFrame(rows[:n])
+
+
+def _naver_mcap_top(sosok, n, suffix):
+    """네이버 PC 시가총액 순위 페이지 (보통주만)"""
+    rows, seen = [], set()
     for page in range(1, 15):
         r = requests.get(f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}",
-                         headers=hdr, timeout=20)
+                         headers=BROWSER, timeout=20)
+        html = _decode(r.content)
+        i = html.find('class="type_2"')
+        body = html[i: html.find("</table>", i)] if i >= 0 else html
+        found = re.findall(r'code=(\d{6})"[^>]*>([^<]+)</a>', body)
         if page == 1:
-            print(f"  naver 시총순위 HTTP {r.status_code}, {len(r.content)} bytes")
-        html = r.content.decode("euc-kr", "ignore")
-        found = re.findall(r'code=(\d{6})"[^>]*class="tltle"[^>]*>([^<]+)<', html)
+            print(f"  naver 시총순위 HTTP {r.status_code}, {len(r.content)} bytes, 표 {'있음' if i >= 0 else '없음'}, 링크 {len(found)}개")
+            if not found:
+                k = html.find("code=")
+                print("  샘플:", re.sub(r"\s+", " ", html[max(0, k - 200): k + 300] if k >= 0 else html[:500]))
         if not found:
             break
         for c, nm in found:
             nm = nm.strip()
-            if c in seen or not c.endswith("0") or any(w in nm.upper() for w in ETF_WORDS):
-                continue  # 우선주·ETF·스팩·리츠 제외
+            if c in seen or not nm or not _keep(c, nm):
+                continue
             seen.add(c)
             rows.append({"code": c, "symbol": f"{c}{suffix}", "name": nm, "sector": ""})
         if len(rows) >= n:
@@ -94,48 +135,65 @@ def _naver_mcap_top(sosok, n, suffix):
     return pd.DataFrame(rows[:n])
 
 
-def _wiki(url, key_col):
-    html = requests.get(url, headers=UA, timeout=30).text
+def _wiki(url, key_cols):
+    html = requests.get(url, headers=BROWSER, timeout=30).text
     for t in pd.read_html(io.StringIO(html)):
         cols = [str(c) for c in t.columns]
-        if key_col in cols:
-            return t
-    raise ValueError(f"{url} 에서 {key_col} 표를 못 찾음")
+        for k in key_cols:
+            if k in cols and len(t) >= 90:
+                return t, k
+    raise ValueError(f"{url} 에서 {key_cols} 표를 못 찾음")
 
 
-def _sp500():
-    t = _wiki("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", "Symbol")
-    return pd.DataFrame(
-        {
-            "code": t["Symbol"].astype(str),
-            "symbol": t["Symbol"].astype(str).str.replace(".", "-", regex=False),
-            "name": t["Security"].astype(str),
-            "sector": t["GICS Sector"].astype(str),
-        }
-    )
+def _frame(t, sym_col, name_col, sec_col):
+    sym = t[sym_col].astype(str).str.strip()
+    return pd.DataFrame({
+        "code": sym, "symbol": sym.str.replace(".", "-", regex=False),
+        "name": t[name_col].astype(str) if name_col in t.columns else sym,
+        "sector": t[sec_col].astype(str) if sec_col and sec_col in t.columns else "",
+    })
 
 
-def _ndx():
-    t = _wiki("https://en.wikipedia.org/wiki/Nasdaq-100", "Ticker")
-    name_col = "Company" if "Company" in t.columns else t.columns[0]
+def _sp500_wiki():
+    t, k = _wiki("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", ["Symbol", "Ticker"])
+    return _frame(t, k, "Security", "GICS Sector")
+
+
+def _sp500_github():
+    t = pd.read_csv(io.StringIO(requests.get(
+        "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv", timeout=30).text))
+    if len(t) < 450:
+        raise ValueError(f"{len(t)}개")
+    return _frame(t, "Symbol", "Security", "GICS Sector")
+
+
+def _ndx_nasdaq():
+    r = requests.get("https://api.nasdaq.com/api/quote/list-type/nasdaq100",
+                     headers={**BROWSER, "Accept": "application/json, text/plain, */*",
+                              "Origin": "https://www.nasdaq.com", "Referer": "https://www.nasdaq.com/"}, timeout=30)
+    print(f"  nasdaq api HTTP {r.status_code}")
+    rows = (((r.json() or {}).get("data") or {}).get("data") or {}).get("rows") or []
+    if len(rows) < 90:
+        raise ValueError(f"nasdaq api {len(rows)}개")
+    return _frame(pd.DataFrame(rows), "symbol", "companyName", None)
+
+
+def _ndx_wiki():
+    t, k = _wiki("https://en.wikipedia.org/wiki/Nasdaq-100", ["Ticker", "Symbol"])
+    name_col = next((c for c in t.columns if str(c) in ("Company", "Security", "Name")), t.columns[0])
     sec_col = next((c for c in t.columns if "Sector" in str(c)), None)
-    return pd.DataFrame(
-        {
-            "code": t["Ticker"].astype(str),
-            "symbol": t["Ticker"].astype(str).str.replace(".", "-", regex=False),
-            "name": t[name_col].astype(str),
-            "sector": t[sec_col].astype(str) if sec_col else "",
-        }
-    )
+    return _frame(t, k, name_col, sec_col)
 
 
 SOURCES = {
     "KOSPI200": [("pykrx", lambda: _kr_pykrx("1028", ".KS")), ("naver", _kospi200_naver),
-                 ("naver 시총 상위 200 (근사)", lambda: _naver_mcap_top(0, 200, ".KS"))],
+                 ("naver 시총 상위 200 (근사)", lambda: _naver_api_top("KOSPI", 200, ".KS")),
+                 ("naver PC 시총 상위 200 (근사)", lambda: _naver_mcap_top(0, 200, ".KS"))],
     "KOSDAQ150": [("pykrx", lambda: _kr_pykrx("2203", ".KQ")),
-                  ("naver 시총 상위 150 (근사)", lambda: _naver_mcap_top(1, 150, ".KQ"))],
-    "NASDAQ100": [("wikipedia", _ndx)],
-    "SP500": [("wikipedia", _sp500)],
+                  ("naver 시총 상위 150 (근사)", lambda: _naver_api_top("KOSDAQ", 150, ".KQ")),
+                  ("naver PC 시총 상위 150 (근사)", lambda: _naver_mcap_top(1, 150, ".KQ"))],
+    "NASDAQ100": [("nasdaq.com", _ndx_nasdaq), ("wikipedia", _ndx_wiki)],
+    "SP500": [("wikipedia", _sp500_wiki), ("github datasets", _sp500_github)],
 }
 
 
