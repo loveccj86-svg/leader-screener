@@ -100,6 +100,8 @@ aside.on{transform:none}
   .kv{grid-template-columns:repeat(2,1fr)}
   .mrow{grid-template-columns:60px 1fr auto}
 }
+.ftd{display:inline-block;margin-top:3px;font-size:11.5px;color:var(--muted,#888)}
+.ftd.ftd{color:#1a9c5b;font-weight:600}.ftd.falling{color:#d04545}.ftd.rally{color:#c08a12}
 </style>
 </head>
 <body>
@@ -186,7 +188,8 @@ function renderMarkets(){
     <div class="mcard"><h3><span>${names[k]||k} 시장 (M)</span><span class="mono">${esc(m.asof||'')}</span></h3>
     ${m.M.map(x=>`<div class="mrow"><span class="mname">${esc(x.name)}</span>
       <span class="mmeta mono">${price(x.close)} <span class="${cls(x.chg1d)}">${pct(x.chg1d)}</span> · 고점대비 ${pct(x.from_hi52,1,false)}<br>
-      6개월 큰상승 ${x.big_up_6m??'–'} / 큰하락 ${x.big_down_6m??'–'} · 분산일 ${x.dist_days_25??'–'}</span>
+      6개월 큰상승 ${x.big_up_6m??'–'} / 큰하락 ${x.big_down_6m??'–'} · 분산일 ${x.dist_days_25??'–'}
+      ${x.ftd?`<br><span class="ftd ${x.ftd.stage}">${x.ftd.stage==='ftd'?'● ':''}${esc(x.ftd.text)}</span>`:''}</span>
       <span class="pill ${x.status}">${esc(x.label)}</span></div>`).join('')}
     <div class="base">장세 시작일 <b class="mono">${esc(m.base_date)}</b> (${esc(m.base_mode)}, ${m.days_since_base}일 경과)</div></div>`).join('');
 }
