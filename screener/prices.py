@@ -113,6 +113,39 @@ def price_metrics(d, base_date):
     }
 
 
+def ftd_state(d, gain=0.0125, min_day=4, min_dd=-0.10):
+    """오닐 팔로스루데이: 52주 고점 이후 최저 종가를 바닥 후보로 보고,
+    반등 {min_day}일째 이후 +1.25% 이상 & 거래량 전일 대비 증가한 첫날을 팔로스루데이로 판정."""
+    c, v = d["Close"].dropna(), d["Volume"].reindex(d["Close"].dropna().index).fillna(0)
+    w = c.iloc[-252:]
+    peak_i = int(np.argmax(w.values))
+    after = w.iloc[peak_i:]
+    low_i = int(np.argmin(after.values))
+    low_date, low = after.index[low_i], float(after.iloc[low_i])
+    peak_date, peak = w.index[peak_i], float(w.iloc[peak_i])
+    dd = low / peak - 1
+    pos = c.index.get_loc(low_date)
+    days = len(c) - 1 - pos
+    has_vol = v.iloc[-60:].sum() > 0
+    ftd = None
+    for k in range(pos + min_day, len(c)):
+        chg = c.iloc[k] / c.iloc[k - 1] - 1
+        if chg >= gain and (not has_vol or v.iloc[k] > v.iloc[k - 1]):
+            ftd = {"date": c.index[k].strftime("%Y-%m-%d"), "day": k - pos, "chg": float(chg)}
+            break
+    if dd > min_dd:
+        stage, text = "none", f"고점 대비 {dd:.0%} — 의미 있는 조정 아님"
+    elif ftd:
+        stage, text = "ftd", f"팔로스루데이 {ftd['date']} (반등 {ftd['day']}일째 +{ftd['chg']:.1%}) → 새 장세 시작 후보 {low_date:%Y-%m-%d}"
+    elif days == 0:
+        stage, text = "falling", f"바닥 미확인 — 오늘이 신저가 (고점 대비 {dd:.0%})"
+    else:
+        stage, text = "rally", f"바닥 후보 {low_date:%Y-%m-%d} · 반등 {days}일째 · 팔로스루데이 대기"
+    return {"peak_date": peak_date.strftime("%Y-%m-%d"), "low_date": low_date.strftime("%Y-%m-%d"),
+            "dd": float(dd), "from_low": float(c.iloc[-1] / low - 1), "rally_days": int(days),
+            "ftd": ftd, "stage": stage, "text": text, "vol_used": bool(has_vol)}
+
+
 def market_state(name, d):
     """CAN SLIM M + 신영 신호(2) 큰 상승/하락일 균형 + 분산일"""
     c, v = d["Close"], d["Volume"].fillna(0)
@@ -149,4 +182,5 @@ def market_state(name, d):
         "big_up_6m": big_up, "big_down_6m": big_dn,
         "dist_days_25": dist,
         "status": status, "label": label,
+        "ftd": ftd_state(d),
     }
