@@ -31,6 +31,8 @@ def run_market(mkt, cfg, prev, full=False):
     if mcfg["base_index"] not in idx_syms:
         idx_syms.append(mcfg["base_index"])
     px = prices.download(idx_syms + all_syms)
+    if mkt == "KR":
+        prices.kr_freshen(px, idx_syms + all_syms)
     print(f"시세 {len(px)}/{len(all_syms) + len(idx_syms)}")
 
     m_states = [prices.market_state(n, px[s]) for n, s in mcfg["m_indexes"].items() if s in px]
@@ -141,6 +143,11 @@ def main():
         except Exception as e:  # noqa: BLE001  한 시장이 실패해도 나머지는 진행
             print(f"\n!!! {mkt} 실패: {e}")
             failed.append(mkt)
+            continue
+        prev_asof = (out["markets"].get(mkt) or {}).get("asof")
+        if prev_asof and mb["asof"] and mb["asof"] < prev_asof:
+            # 데이터 소스가 옛날 봉을 준 경우 — 더 새 결과를 덮어쓰지 않는다
+            print(f"\n!!! {mkt} 기준일 {mb['asof']} < 기존 {prev_asof} — 저장 건너뜀")
             continue
         out["markets"][mkt] = mb
         out["indexes"].update(idx)

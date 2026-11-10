@@ -11,7 +11,9 @@ def _norm(d):
     if getattr(idx, "tz", None) is not None:
         idx = idx.tz_localize(None)
     d.index = idx.normalize()
-    return d.dropna(subset=["Close"])
+    d = d.dropna(subset=["Close"])
+    d = d[d["Close"] > 0]                       # 야후 국장에 섞이는 0 행 제거
+    return d[~d.index.duplicated(keep="last")]
 
 
 def download(symbols, period="3y", chunk=80, pause=2.0):
@@ -47,6 +49,77 @@ def download(symbols, period="3y", chunk=80, pause=2.0):
                 out[s] = d
         time.sleep(pause)
     return out
+
+
+# ── 국장 보정: 야후가 최근 봉을 빠뜨리면 네이버 일봉으로 교체 ─────────────────
+_NAVER_IDX = {"^KS11": "KOSPI", "^KQ11": "KOSDAQ"}
+
+
+def naver_daily(code, count=800):
+    """네이버 fchart 일봉 (수정주가 아님). code: 005930 / KOSPI / KOSDAQ"""
+    import re
+    import requests
+
+    r = requests.get(
+        "https://fchart.stock.naver.com/sise.nhn",
+        params={"symbol": code, "timeframe": "day", "count": count, "requestType": 0},
+        headers={"User-Agent": "Mozilla/5.0"}, timeout=10,
+    )
+    r.raise_for_status()
+    rows = []
+    for item in re.findall(r'data="([^"]+)"', r.text):
+        f = item.split("|")
+        if len(f) < 6:
+            continue
+        try:
+            rows.append((pd.Timestamp(f[0]), *(float(x) for x in f[1:6])))
+        except ValueError:
+            continue
+    if not rows:
+        return None
+    d = pd.DataFrame(rows, columns=["Date", "Open", "High", "Low", "Close", "Volume"]).set_index("Date")
+    return _norm(d)
+
+
+def _naver_code(sym):
+    if sym in _NAVER_IDX:
+        return _NAVER_IDX[sym]
+    if sym.endswith((".KS", ".KQ")):
+        return sym.split(".")[0]
+    return None
+
+
+def kr_freshen(px, symbols, workers=8):
+    """국장 심볼 중 최근 거래일이 빠진 것만 네이버 일봉으로 교체. 바뀐 개수 반환"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        ref = naver_daily("KOSPI", 10)
+        latest = ref.index[-1] if ref is not None and len(ref) else None
+    except Exception as e:  # noqa: BLE001
+        print(f"  네이버 기준일 조회 실패: {e}")
+        return 0
+    if latest is None:
+        return 0
+    targets = [s for s in dict.fromkeys(symbols) if _naver_code(s)
+               and (s not in px or px[s].index[-1] < latest)]
+    print(f"  국장 기준일 {latest.date()} — 야후 누락/지연 {len(targets)}종목 네이버로 보정")
+
+    def one(s):
+        try:
+            d = naver_daily(_naver_code(s))
+            return s, d if d is not None and len(d) >= 60 else None
+        except Exception:  # noqa: BLE001
+            return s, None
+
+    n = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for s, d in ex.map(one, targets):
+            if d is not None:
+                px[s] = d
+                n += 1
+    print(f"  네이버 보정 완료 {n}/{len(targets)}")
+    return n
 
 
 def auto_base_date(index_df, lookback=250):
