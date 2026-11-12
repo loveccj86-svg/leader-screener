@@ -34,17 +34,21 @@ def _call(api_key, model, data, market):
         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
         json={
             "model": model,
-            "max_tokens": 700,
+            "max_tokens": 4000,
             "system": SYSTEM,
             "messages": [{"role": "user", "content": PROMPT.format(data=json.dumps(clean(data), ensure_ascii=False), market=market)}],
         },
         timeout=60,
     )
     r.raise_for_status()
-    text = "".join(b.get("text", "") for b in r.json().get("content", []))
+    j = r.json()
+    blocks = j.get("content", []) or []
+    text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
-        print(f"  AI 응답에 JSON 없음: {text[:200]!r}")
+        kinds = [b.get("type") for b in blocks]
+        print(f"  AI 응답에 JSON 없음: stop={j.get('stop_reason')} blocks={kinds} "
+              f"usage={j.get('usage')} text={text[:200]!r}")
         return None
     return json.loads(m.group(0))
 
