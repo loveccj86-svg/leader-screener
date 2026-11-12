@@ -65,7 +65,7 @@
   ],
   "fundamental_refresh_days": 7,
   "max_fundamental_refresh_per_run": 400,
-  "ai_top_n_per_index": 10,
+  "ai_top_n_per_index": 100,
   "ai_refresh_days": 7,
   "ai_model": "claude-haiku-5-5",
   "list_top_n": 200
