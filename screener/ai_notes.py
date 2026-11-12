@@ -43,13 +43,19 @@ def _call(api_key, model, data, market):
     r.raise_for_status()
     text = "".join(b.get("text", "") for b in r.json().get("content", []))
     m = re.search(r"\{.*\}", text, re.S)
-    return json.loads(m.group(0)) if m else None
+    if not m:
+        print(f"  AI 응답에 JSON 없음: {text[:200]!r}")
+        return None
+    return json.loads(m.group(0))
 
 
 def annotate(stocks, fund_cache, market_label, cfg):
-    key = os.getenv("ANTHROPIC_API_KEY")
+    key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     if not key:
+        print("  AI: ANTHROPIC_API_KEY 없음 — 한국어 코멘트 건너뜀")
         return 0
+    if not key.startswith("sk-ant-"):
+        print(f"  AI: 키 형식이 이상함 (길이 {len(key)}, sk-ant- 로 시작하지 않음)")
     model = os.getenv("AI_MODEL") or cfg.get("ai_model", "claude-haiku-5-5")
     n = 0
     today = date.today()
@@ -80,6 +86,9 @@ def annotate(stocks, fund_cache, market_label, cfg):
                 fund_cache[s["symbol"]] = f
                 s["ai"] = res
                 n += 1
+        except requests.HTTPError as e:  # noqa: BLE001
+            body = e.response.text[:300] if e.response is not None else ""
+            print(f"  AI 실패 {s['symbol']}: {e} {body}")
         except Exception as e:  # noqa: BLE001
             print(f"  AI 실패 {s['symbol']}: {e}")
     return n
