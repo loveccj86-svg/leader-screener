@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from . import ai_notes, fundamentals, prices, universe
+from . import ai_notes, fundamentals, prices, survival, universe
 from .common import DATA, DOCS_DATA, load_config, read_json, write_json
 from .scoring import fundamental_metrics, score
 
@@ -60,6 +60,8 @@ def run_market(mkt, cfg, prev, full=False):
     )
 
     prev_idx = (prev or {}).get("indexes", {})
+    sc = survival.conf(cfg)
+    ddmap = {}
     out_indexes = {}
     m_down = any(m["status"] == "down" for m in m_states)
     m_label = ", ".join(f"{m['name']} {m['label']}" for m in m_states)
@@ -76,6 +78,20 @@ def run_market(mkt, cfg, prev, full=False):
             recs.append({"symbol": r.symbol, "code": r.code, "name": r.name, "sector_idx": r.sector, **pm})
         if not recs:
             continue
+        isym = sc["index_map"].get(name)
+        ib = survival.index_block(px[isym], isym, sc) if isym in px else None
+        if ib:
+            for x in recs:
+                try:
+                    sv, ser = survival.stock_metrics(px[x["symbol"]], ib, sc, kr=(mkt == "KR"))
+                except Exception as e:  # noqa: BLE001
+                    print(f"  생존 지표 실패 {x['symbol']}: {e}")
+                    sv, ser = None, None
+                if sv:
+                    x["sv"] = sv
+                if ser:
+                    ddmap[x["symbol"]] = ser
+            print(f"{name}: 생존 보드 기준 {ib['name']} · 고점대비 {ib['dd']*100:.1f}% · 충격일 {len(ib['shocks'])}회")
         rs = pct_rank([x["rs_raw"] for x in recs])
         mom = pct_rank([x["mom_base"] for x in recs])
         pre = pct_rank([x["pre_base_1y"] for x in recs])
@@ -106,6 +122,7 @@ def run_market(mkt, cfg, prev, full=False):
         out_indexes[name] = {
             "market": mkt, "label": universe.INDEX_META[name]["label"], "source": src,
             "count": len(recs), "stocks": recs[: cfg["list_top_n"]],
+            "survival": ib,
         }
     write_json(fundamentals.CACHE_FILE, fcache)
     details = {}
@@ -116,6 +133,7 @@ def run_market(mkt, cfg, prev, full=False):
                 "summary": f.get("summary"), "website": f.get("website"),
                 "annual": f.get("annual", [])[-6:], "quarters": f.get("quarters", [])[-8:],
                 "ai": s.get("ai") or f.get("ai"),
+                "dd": ddmap.get(s["symbol"]),
             }
     market_block = {
         "updated": datetime.now(timezone.utc).isoformat(timespec="minutes"),
