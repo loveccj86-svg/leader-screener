@@ -88,6 +88,10 @@ aside.on{transform:none}
 .ai{background:var(--accent-soft);border-radius:10px;padding:12px 14px}
 .ai p{margin:0 0 6px}.ai p:last-child{margin:0}
 .ai .lbl{font-size:11px;font-weight:600;color:var(--accent);margin-right:6px}
+.ai .cs{display:grid;grid-template-columns:auto 1fr;gap:5px 9px;margin:8px 0 10px;align-items:baseline}
+.ai .cs b{font-family:var(--mono,monospace);font-size:11px;min-width:34px;text-align:center;padding:2px 5px;border-radius:4px;background:#e9ecef;color:#555}
+.ai .cs b.ok{background:#dcf2e5;color:#1d7a46}.ai .cs b.ng{background:#fbe3e1;color:#b3261e}
+.ai .cs span{font-size:13px;line-height:1.5}
 .checks{display:grid;gap:4px}
 .ck{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line2);font-size:13px}
 .ck .grp{font-size:11px;color:var(--ink3)}
@@ -145,6 +149,16 @@ aside.on{transform:none}
 </aside>
 
 <script>
+function aiVerdict(ai){
+  if (!ai.C) return `<p><span class="lbl">판정</span>${esc(ai.verdict||'')}</p>`;
+  const row = (k, lb) => { const t = ai[k] || ''; if (!t) return '';
+    const cls = /^통과/.test(t) ? 'ok' : /^미달/.test(t) ? 'ng' : '';
+    return `<b class="${cls}">${lb}</b><span>${esc(t)}</span>`; };
+  return (ai.market ? `<p><span class="lbl">시장(M)</span>${esc(ai.market)}</p>` : '') +
+    `<div class="cs">${row('C','C')}${row('A','A')}${row('N','N')}${row('S','S')}${row('L','L')}${row('I','I')}${row('DB','DB')}${row('HANA','하나')}</div>` +
+    (ai.stage ? `<p><span class="lbl">단계</span>${esc(ai.stage)}</p>` : '');
+}
+
 const S = {data:null, details:null, idx:null, sort:{k:'rank',dir:1}};
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -305,7 +319,7 @@ async function openDetail(sym){
   </div>
   ${s.tags.length?`<div class="sec">${s.tags.map(t=>`<span class="tag ${t.k}">${esc(t.t)}</span>`).join('')}</div>`:''}
   <div class="sec"><h4>어떤 회사인가</h4>
-    ${ai ? `<div class="ai"><p><span class="lbl">소개</span>${esc(ai.intro)}</p><p><span class="lbl">판정</span>${esc(ai.verdict)}</p><p><span class="lbl">확인할 것</span>${esc(ai.watch)}</p></div>
+    ${ai ? `<div class="ai"><p><span class="lbl">소개</span>${esc(ai.intro)}</p>${aiVerdict(ai)}<p><span class="lbl">확인할 것</span>${esc(ai.watch)}</p></div>
       <p class="note">AI 코멘트 ${esc(ai.date)} · 규칙 문서 기준 · 투자 권유 아님</p>`
       : `<p class="summary-en">${esc(d.summary || '회사 소개가 아직 수집되지 않았습니다.')}</p><p class="note">한국어 소개·판정은 ANTHROPIC_API_KEY 설정 시 상위 종목에 생성됩니다.</p>`}
   </div>
