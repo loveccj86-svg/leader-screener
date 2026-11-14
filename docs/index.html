@@ -109,6 +109,27 @@ aside.on{transform:none}
 .tvlink{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
 .tvlink:hover{color:var(--accent,#2962ff)}.tvi{font-size:10px;margin-left:3px;opacity:.6}
 .dbtns{display:flex;gap:6px;align-items:flex-start}.tvbtn{text-decoration:none;white-space:nowrap}
+
+/* 생존 보드 */
+.views{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:10px;background:var(--panel)}
+.views button{border:0;background:none;padding:7px 14px;font:inherit;color:var(--ink2);cursor:pointer}
+.views button[aria-pressed="true"]{background:var(--ink);color:var(--panel);font-weight:600}
+.svcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px}
+.svcards div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.svcards b{display:block;font-size:12px;color:var(--ink2);font-weight:500}
+.svcards span{font-size:20px;font-weight:600}
+.svchips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.svchips button{border:1px solid var(--line);background:var(--panel);color:var(--ink2);border-radius:999px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.svchips button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.svchips input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px}
+.rb{display:inline-block;min-width:38px;text-align:center;font-size:12px;font-weight:600;padding:1px 6px;border-radius:5px;margin-left:6px}
+.rb.g{background:var(--good-soft);color:var(--good)}.rb.y{background:var(--warn-soft);color:var(--warn)}.rb.r{background:var(--bad-soft);color:var(--bad)}.rb.na{background:var(--chip);color:var(--ink3)}
+.sq{display:inline-block;width:12px;height:12px;border-radius:3px;margin-left:2px;vertical-align:-1px}
+.sq.g{background:var(--good)}.sq.n{background:var(--line)}.sq.r{background:var(--bad)}.sq.x{border:1px dashed var(--line)}
+.sq.L{outline:2px solid var(--ink3);outline-offset:1px}
+.st{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.st.g{background:var(--good-soft);color:var(--good)}.st.y{background:var(--warn-soft);color:var(--warn)}.st.r{background:var(--bad-soft);color:var(--bad)}.st.n{background:var(--chip);color:var(--ink2)}
+.svlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-top:8px}
 </style>
 </head>
 <body>
@@ -125,8 +146,9 @@ aside.on{transform:none}
   </header>
   <div id="banner"></div>
   <section class="markets" id="markets"></section>
+  <nav class="views" id="views"><button data-v="list" aria-pressed="true">주도주 후보</button><button data-v="sv" aria-pressed="false">생존 보드</button></nav>
   <nav class="tabs" id="tabs" role="tablist"></nav>
-  <div class="filters">
+  <div class="filters" id="filtersBar">
     <input type="search" id="q" placeholder="종목명·코드 검색">
     <select id="grade">
       <option value="">전체 판정</option><option>주도주 후보</option><option>관찰</option><option>약함</option><option>탈락</option>
@@ -135,7 +157,8 @@ aside.on{transform:none}
     <label><input type="checkbox" id="onlyNew"> 신규 진입만</label>
     <span class="summary" id="sum"></span>
   </div>
-  <div class="tablewrap"><table>
+  <div id="svWrap" hidden></div>
+  <div class="tablewrap" id="listWrap"><table>
     <thead><tr id="thead"></tr></thead>
     <tbody id="tbody"></tbody>
   </table></div>
@@ -193,8 +216,9 @@ async function load(){
     const b=S.data.indexes[k]; const n=b.stocks.filter(s=>s.grade==='주도주 후보').length;
     return `<button class="tab" role="tab" data-k="${k}" aria-selected="${k===S.idx}">${esc(b.label)}<span class="c">후보 ${n}</span></button>`;}).join('');
   $('#tabs').onclick = e => { const b=e.target.closest('.tab'); if(!b) return; S.idx=b.dataset.k; try{localStorage.setItem('idx',S.idx)}catch(e){}
-    document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected', t.dataset.k===S.idx)); render(); };
-  render();
+    document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected', t.dataset.k===S.idx)); SV.view==='sv'?renderSurvival():render(); };
+  let sv0=null; try{sv0=localStorage.getItem('view')}catch(e){}
+  setView(sv0==='sv'?'sv':'list');
 }
 
 function renderMarkets(){
@@ -328,6 +352,7 @@ async function openDetail(sym){
       <div class="ck"><span class="dot ${c.pass==null?'x':c.pass?'y':'n'}">${c.pass==null?'–':c.pass?'✓':'·'}</span><span>${esc(c.label)}</span><span class="mono">${fmtv(c)}</span></div>`).join('')}</div>`).join('')}
   </div>
   <div class="sec"><h4>주가 1년 (주간 종가)</h4>${priceChart(s)}</div>
+  ${s.sv&&!s.sv.bad&&b.survival?`<div class="sec"><h4>고점대비 낙폭 추이 — ${esc(b.survival.name)} 대비 (현재 비율 ${rtxt(s.sv.r)} · 최대 비율 ${rtxt(s.sv.rm)} · 충격일 방어 ${s.sv.ok}/${s.sv.n})</h4>${ddChart(s,d,b.survival)}<p class="note">종목선이 지수선 위에 있으면 지수보다 덜 빠진 상태입니다. 아래로 뚫는 지점이 꺾이는 날입니다.</p></div>`:''}
   <div class="sec"><h4>연간 재무 ${ann.length}개년 <span class="note">(${esc(s.fin_source||'')})</span></h4>
     ${finChart(ann,cur)}
     ${ann.length?`<table class="fin"><thead><tr><th class="l">연도</th><th>매출</th><th>영업이익</th><th>OPM</th><th>순이익</th><th>EPS</th></tr></thead><tbody>
@@ -355,6 +380,104 @@ $('#rulesBtn').onclick=()=>{ $('#dTitle').textContent='판정 기준'; $('#dSub'
   <div class="sec"><h4>판정</h4><p>주도주 후보: 70점 이상 + CAN SLIM 4개 이상 + RS 70 이상<br>관찰: 50점 이상<br>탈락: 장세 고점 대비 -30% 초과 하락 (DB 95.3% 규칙)</p></div>
   <div class="sec"><h4>신호 태그</h4><p>직전 주도주(장세 시작 전 1년 수익률 상위 5%) · OPM 하락 소멸 경고(매출↑ OPM↓, 시스코 패턴) · 범용재 이익지속성 주의 · 거래량 동반 신고가권</p></div>`;
   $('#drawer').classList.add('on'); $('#scrim').classList.add('on'); };
+
+/* ── 생존 보드 ── */
+const SV = {view:'list', chip:'all', q:'', sort:{k:'r',dir:1}};
+const rcls = r => r==null ? 'na' : r<=0.5 ? 'g' : r<1 ? 'y' : 'r';
+const rtxt = r => r==null ? '—' : r.toFixed(2);
+function svStatus(s){
+  const v=s.sv; if(!v) return null;
+  if(v.bad) return {k:'n', t:'데이터 확인'};
+  if(v.last==='r') return {k:'r', t:'최근 꺾임'};
+  const okR = v.r==null || v.r<=0.5, okM = v.rm==null || v.rm<=0.5;
+  if((s.rs??0)>=80 && v.r!=null && okR && okM) return v.big_n ? {k:'g', t:`생존 ${v.ok}/${v.n}`} : {k:'y', t:'생존 · 대충격 미검증'};
+  if(!v.big_n) return {k:'y', t:'대충격 미검증'};
+  return {k:'n', t:`관찰 ${v.ok}/${v.n}`};
+}
+const svVal = (s,k) => { const v=s.sv||{}; return k==='rs'?s.rs : k==='dd'?v.dd : k==='r'?v.r : k==='mdd'?v.mdd : k==='rm'?v.rm : k==='ok'?(v.n?v.ok/v.n:null) : k==='name'?(s.name||s.symbol) : null; };
+function renderSurvival(){
+  const b=S.data.indexes[S.idx], box=$('#svWrap'), ib=b&&b.survival;
+  if(!ib){ box.innerHTML='<div class="tablewrap"><div class="empty">생존 보드 데이터가 아직 없습니다. 다음 스크리닝 실행부터 표시됩니다.</div></div>'; return; }
+  const all=b.stocks.filter(s=>s.sv);
+  const st=all.map(s=>[s,svStatus(s)]);
+  const n_live=st.filter(([s,x])=>x&&x.k==='g').length, n_crack=st.filter(([s,x])=>x&&x.t==='최근 꺾임').length;
+  const nL=ib.shocks.filter(x=>x.t==='L').length;
+  const q=SV.q.toLowerCase();
+  let rows=st.filter(([s,x])=>{
+    if(q && !((s.name||'').toLowerCase().includes(q)||s.symbol.toLowerCase().includes(q))) return false;
+    if(SV.chip==='live') return x&&x.k==='g';
+    if(SV.chip==='crack') return x&&x.t==='최근 꺾임';
+    if(SV.chip==='untested') return s.sv&&!s.sv.bad&&!s.sv.big_n;
+    if(SV.chip==='cand') return s.grade==='주도주 후보';
+    return true; }).map(([s])=>s);
+  const {k,dir}=SV.sort;
+  rows.sort((a,c)=>{ let x=svVal(a,k), y=svVal(c,k);
+    if(k==='name') return dir*String(x).localeCompare(String(y),'ko');
+    if(x==null&&y==null) return (svVal(a,'rm')??9)-(svVal(c,'rm')??9); if(x==null) return 1; if(y==null) return -1;
+    return dir*(x-y) || ((svVal(a,'rm')??9)-(svVal(c,'rm')??9)); });
+  const sh=ib.shocks.slice(-15), off=ib.shocks.length-sh.length;
+  const th=(key,t,l)=>`<th class="${l?'l':''}" data-k="${key||''}">${t}${SV.sort.k===key&&key?(SV.sort.dir>0?' ↑':' ↓'):''}</th>`;
+  const chip=(v,t)=>`<button data-c="${v}" aria-pressed="${SV.chip===v}">${t}</button>`;
+  const t=ib.tiers.map(x=>(x*100).toFixed(1)+'%');
+  box.innerHTML=`
+  <div class="svcards">
+    <div><b>${esc(ib.name)} 고점대비</b><span class="mono neg">${pct(ib.dd)}</span></div>
+    <div><b>하락장 최대낙폭 (고점 ${esc(ib.peak)} 이후)</b><span class="mono neg">${pct(ib.mdd)}</span></div>
+    <div><b>충격일 (최근 ${ib.window}거래일)</b><span class="mono">${ib.shocks.length}회</span> <span class="sub">대충격 ${nL}</span></div>
+    <div><b>생존 주도주 / 최근 꺾임</b><span class="mono"><span class="pos">${n_live}</span> / <span class="neg">${n_crack}</span></span></div>
+  </div>
+  ${ib.ratio_ok?'':`<div class="banner" style="margin-bottom:10px">지수 고점대비 낙폭이 ${pct(ib.min_idx_dd,0,false)}보다 얕아 현재 낙폭 비율은 계산하지 않습니다. 충격일 방어 기록과 최대 낙폭 위주로 보세요.</div>`}
+  <div class="svchips">${chip('all','전체')}${chip('live','생존 주도주')}${chip('crack','최근 꺾임')}${chip('untested','대충격 미검증')}${chip('cand','주도주 후보만')}
+    <input type="search" id="svq" placeholder="종목명·코드 검색" value="${esc(SV.q)}"><span class="summary">${rows.length}종목</span></div>
+  <div class="tablewrap"><table>
+    <thead><tr>${th('name','종목',1)}${th('','판정',1)}${th('rs','RS')}${th('dd','현재 낙폭')}${th('r','비율')}${th('mdd','최대 낙폭')}${th('rm','비율')}
+      <th class="l">충격일 ${sh.length?esc(sh[0].d.slice(5))+' → '+esc(sh[sh.length-1].d.slice(5)):'없음'}</th>${th('ok','방어')}<th>대충격</th><th class="l">상태</th></tr></thead>
+    <tbody>${rows.length?rows.map(s=>{const v=s.sv, x=svStatus(s);
+      if(v.bad) return `<tr data-s="${esc(s.symbol)}"><td class="l"><span class="nm">${esc(s.name||s.symbol)}</span></td><td colspan="9" class="l note">국장 비수정 주가(액면분할 추정)로 계산 제외</td><td class="l"><span class="st n">데이터 확인</span></td></tr>`;
+      const sq=sh.map((z,i)=>{const m=v.m[off+i]||'-', sr=v.sr[off+i];
+        return `<span class="sq ${m==='-'?'x':m} ${z.t==='L'?'L':''}" title="${z.d} ${esc(ib.name)} ${pct(z.r)} / 종목 ${sr==null?'–':pct(sr)}${z.t==='L'?' · 대충격':z.t==='M'?' · 중충격':''}"></span>`;}).join('');
+      return `<tr data-s="${esc(s.symbol)}">
+      <td class="l"><a class="nm tvlink" href="${tvUrl(s,b.market)}" target="_blank" rel="noopener">${esc(s.name||s.symbol)}<span class="tvi">↗</span></a><span class="sym mono">${esc(s.code)}</span></td>
+      <td class="l"><span class="grade g-${s.grade.replace(' ','')}">${s.grade}</span></td>
+      <td class="mono">${s.rs??'–'}</td>
+      <td class="mono ${cls(v.dd)}">${pct(v.dd)}</td><td><span class="rb ${rcls(v.r)}">${rtxt(v.r)}</span></td>
+      <td class="mono ${cls(v.mdd)}">${pct(v.mdd)}</td><td><span class="rb ${rcls(v.rm)}">${rtxt(v.rm)}</span></td>
+      <td class="l">${sq}</td>
+      <td class="mono">${v.n?v.ok+'/'+v.n:'–'}${v.streak>=2?` <span class="note">연속 ${v.streak}</span>`:''}</td>
+      <td class="mono">${v.big_n?`<span class="${v.big_ok===v.big_n?'pos':v.big_ok===0?'neg':''}">${v.big_ok}/${v.big_n}</span>`:'<span class="note">미검증</span>'}</td>
+      <td class="l">${x?`<span class="st ${x.k}">${esc(x.t)}</span>`:''}</td></tr>`;}).join(''):`<tr><td colspan="11" class="empty">조건에 맞는 종목이 없습니다.</td></tr>`}</tbody></table></div>
+  <div class="svlegend"><span>비율 = 종목 52주 고점대비 낙폭 ÷ ${esc(ib.name)} 고점대비 낙폭</span>
+    <span><span class="rb g">≤0.50</span> 지수 절반 이하 <span class="rb y">&lt;1</span> 덜 빠짐 <span class="rb r">≥1</span> 더 빠짐</span>
+    <span><span class="sq g"></span> 지수보다 ${(ib.band*100).toFixed(1)}%p 이상 덜 빠짐 <span class="sq n"></span> 비슷 <span class="sq r"></span> 더 빠짐 <span class="sq g L"></span> 대충격</span>
+    <span>충격일 기준 ${esc(ib.name)} 하루 소 ${t[0]} · 중 ${t[1]} · 대 ${t[2]} 이하</span>
+    <span>생존 주도주 = RS 80↑ · 현재·최대 비율 0.5↓ · 최근 충격일 방어</span></div>`;
+  box.querySelector('.svchips').onclick=e=>{const c=e.target.closest('button[data-c]'); if(!c) return; SV.chip=c.dataset.c; renderSurvival();};
+  const qi=box.querySelector('#svq'); qi.oninput=()=>{SV.q=qi.value; const pos=qi.selectionStart; renderSurvival(); const n=$('#svq'); n.focus(); n.setSelectionRange(pos,pos);};
+  box.querySelector('thead').onclick=e=>{const h=e.target.closest('th'); if(!h||!h.dataset.k) return; const k=h.dataset.k;
+    SV.sort={k, dir: SV.sort.k===k ? -SV.sort.dir : (['rs','ok'].includes(k)?-1:k==='dd'||k==='mdd'?-1:1)}; renderSurvival();};
+  box.querySelector('tbody').onclick=e=>{ if(e.target.closest('a')) return; const tr=e.target.closest('tr[data-s]'); if(tr) openDetail(tr.dataset.s); };
+}
+function setView(v){
+  SV.view=v; try{localStorage.setItem('view',v)}catch(e){}
+  document.querySelectorAll('#views button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.v===v));
+  const sv=v==='sv'; $('#svWrap').hidden=!sv; $('#listWrap').hidden=sv; $('#filtersBar').style.display=sv?'none':'';
+  if(sv) renderSurvival(); else render();
+}
+$('#views').onclick=e=>{const b=e.target.closest('button[data-v]'); if(b) setView(b.dataset.v);};
+function ddChart(s, d, ib){
+  if(!ib||!d.dd||!ib.series) return '';
+  const a=d.dd, x=ib.series, n=x.length; const vals=[...a,...x].filter(v=>v!=null); if(vals.length<10) return '';
+  const W=560,H=170,P=34, mn=Math.min(...vals,-1), mx=0;
+  const X=i=>P+i/(n-1)*(W-P-8), Y=v=>14+(mx-v)/(mx-mn||1)*(H-40);
+  const line=(arr,st,dash)=>{let p='',seg=[];arr.forEach((v,i)=>{if(v==null){if(seg.length) p+=`<polyline fill="none" stroke="${st}" stroke-width="${dash?1.4:2}" ${dash?'stroke-dasharray="4 3"':''} points="${seg.join(' ')}"/>`; seg=[];} else seg.push(`${X(i).toFixed(1)},${Y(v).toFixed(1)}`);});
+    if(seg.length) p+=`<polyline fill="none" stroke="${st}" stroke-width="${dash?1.4:2}" ${dash?'stroke-dasharray="4 3"':''} points="${seg.join(' ')}"/>`; return p;};
+  const di=Object.fromEntries(ib.dates.map((t,i)=>[t,i]));
+  const bands=ib.shocks.filter(z=>di[z.d]!=null).map(z=>`<rect x="${(X(di[z.d])-3).toFixed(1)}" y="14" width="6" height="${H-40}" fill="var(--bad)" opacity="${z.t==='L'?0.22:0.1}"><title>${z.d} ${esc(ib.name)} ${pct(z.r)}</title></rect>`).join('');
+  const grid=[0, Math.round(mn/2), Math.round(mn)].map(v=>`<line x1="${P}" x2="${W-8}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line2)"/><text x="${P-4}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--ink3)">${v}%</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="고점대비 낙폭 추이">${grid}${bands}${line(x,'var(--ink3)',1)}${line(a,'var(--good)',0)}
+    <text x="${P}" y="${H-6}" font-size="11" fill="var(--ink2)">${esc(ib.dates[0])}</text><text x="${W-8}" y="${H-6}" text-anchor="end" font-size="11" fill="var(--ink2)">${esc(ib.dates[n-1])}</text>
+    <text x="${W-8}" y="11" text-anchor="end" font-size="11" fill="var(--ink2)">— 종목 · ┄ ${esc(ib.name)} · 빨간 띠 = 충격일</text></svg>`;
+}
 load();
 </script>
 </body>
