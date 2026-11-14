@@ -22,9 +22,18 @@ PROMPT = """종목 데이터(JSON):
 
 시장 상태(M): {market}
 
-아래 JSON 형식으로만 답하라. 다른 말은 쓰지 마라.
+아래 JSON 형식으로만 답하라. 다른 말은 쓰지 마라. 각 항목 값은 반드시 "통과 — ", "미달 — ", "확인불가 — " 중 하나로 시작하고 그 뒤에 근거 수치를 한 문장으로 쓴다.
 {{"intro": "어떤 회사인지 2문장 (주력 사업·매출원)",
-  "verdict": "규칙(CAN SLIM, DB 생로병사, 하나 생애주기, 신영 신호) 기준 판정 3문장 이내. 통과·미달 항목을 짚고, 주도주 단계(탄생/2차상승/소멸 경고/탈락)를 말할 것",
+  "market": "시장 상태(M)가 이 종목 매수 판단에 주는 의미 1문장",
+  "C": "분기 EPS 증가율 판정",
+  "A": "연간 EPS 증가율·ROE 판정",
+  "N": "신고가·고점 대비 위치 판정",
+  "S": "거래량(수급) 판정",
+  "L": "상대강도(RS) 판정",
+  "I": "기관 보유 판정",
+  "DB": "DB 생로병사 기준 판정 1문장 (장세 수익률 순위, 장세 고점 대비, 10주선>40주선)",
+  "HANA": "하나 생애주기 기준 판정 1문장 (매출 성장, OPM 변화)",
+  "stage": "주도주 단계(탄생/2차상승/소멸 경고/탈락)와 근거 1~2문장",
   "watch": "다음에 확인할 것 1문장 (예: 다음 분기 OPM, 신고가 돌파 시 거래량)"}}"""
 
 
@@ -70,7 +79,7 @@ def annotate(stocks, fund_cache, market_label, cfg):
             age = (today - date.fromisoformat(old.get("date", "2000-01-01"))).days
         except ValueError:
             age = 999
-        if age < cfg["ai_refresh_days"] and old.get("grade") == s["grade"]:
+        if age < cfg["ai_refresh_days"] and old.get("grade") == s["grade"] and old.get("v") == 2:
             s["ai"] = old
             continue
         data = {
@@ -85,7 +94,7 @@ def annotate(stocks, fund_cache, market_label, cfg):
         try:
             res = _call(key, model, data, market_label)
             if res:
-                res.update({"date": today.isoformat(), "grade": s["grade"], "model": model})
+                res.update({"date": today.isoformat(), "grade": s["grade"], "model": model, "v": 2})
                 f["ai"] = res
                 fund_cache[s["symbol"]] = f
                 s["ai"] = res
