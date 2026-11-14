@@ -60,7 +60,7 @@ def run_market(mkt, cfg, prev, full=False):
     )
 
     prev_idx = (prev or {}).get("indexes", {})
-    sc = survival.conf(cfg)
+    svc = survival.conf(cfg)
     ddmap = {}
     out_indexes = {}
     m_down = any(m["status"] == "down" for m in m_states)
@@ -78,12 +78,12 @@ def run_market(mkt, cfg, prev, full=False):
             recs.append({"symbol": r.symbol, "code": r.code, "name": r.name, "sector_idx": r.sector, **pm})
         if not recs:
             continue
-        isym = sc["index_map"].get(name)
-        ib = survival.index_block(px[isym], isym, sc) if isym in px else None
+        isym = svc["index_map"].get(name)
+        ib = survival.index_block(px[isym], isym, svc) if isym in px else None
         if ib:
             for x in recs:
                 try:
-                    sv, ser = survival.stock_metrics(px[x["symbol"]], ib, sc, kr=(mkt == "KR"))
+                    sv, ser = survival.stock_metrics(px[x["symbol"]], ib, svc, kr=(mkt == "KR"))
                 except Exception as e:  # noqa: BLE001
                     print(f"  생존 지표 실패 {x['symbol']}: {e}")
                     sv, ser = None, None

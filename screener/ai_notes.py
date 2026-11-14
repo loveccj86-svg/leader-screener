@@ -43,7 +43,7 @@ def _call(api_key, model, data, market):
         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
         json={
             "model": model,
-            "max_tokens": 4000,
+            "max_tokens": 10000,
             "system": SYSTEM,
             "messages": [{"role": "user", "content": PROMPT.format(data=json.dumps(clean(data), ensure_ascii=False), market=market)}],
         },
