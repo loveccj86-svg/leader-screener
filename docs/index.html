@@ -111,6 +111,21 @@ aside.on{transform:none}
 .dbtns{display:flex;gap:6px;align-items:flex-start}.tvbtn{text-decoration:none;white-space:nowrap}
 
 /* 생존 보드 */
+#rkPop{position:fixed;z-index:60;pointer-events:none;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:9px 11px;box-shadow:0 6px 24px rgba(0,0,0,.14)}
+#rkPop .t{font-size:13px;margin-bottom:5px;white-space:nowrap}
+#rkPop .t b{font-weight:600}
+.rkbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.rkbar select,.rkbar input{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:5px 8px}
+.rkrow{display:grid;grid-template-columns:38px minmax(104px,1.1fr) 1fr 56px 74px;gap:10px;align-items:center;
+  padding:9px 10px;border-bottom:1px solid var(--line2)}
+.rkrow:hover{background:var(--line2)}
+.rkrow .nm{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rkhead{display:grid;grid-template-columns:38px minmax(104px,1.1fr) 1fr 56px 74px;gap:10px;padding:7px 10px;
+  color:var(--ink2);font-size:12px;border-bottom:1px solid var(--line)}
+.rkup{color:#199e70}.rkdn{color:#d03b3b}
+.rknew{background:#e6f1fb;color:#185fa5;border-radius:5px;padding:1px 6px;font-size:11px}
+:root[data-theme="dark"] .rknew,@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .rknew{background:#0c447c;color:#b5d4f4}}
 .views{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:10px;background:var(--panel)}
 .views button{border:0;background:none;padding:7px 14px;font:inherit;color:var(--ink2);cursor:pointer}
 .views button[aria-pressed="true"]{background:var(--ink);color:var(--panel);font-weight:600}
@@ -146,7 +161,7 @@ aside.on{transform:none}
   </header>
   <div id="banner"></div>
   <section class="markets" id="markets"></section>
-  <nav class="views" id="views"><button data-v="list" aria-pressed="true">주도주 후보</button><button data-v="sv" aria-pressed="false">생존 보드</button></nav>
+  <nav class="views" id="views"><button data-v="list" aria-pressed="true">주도주 후보</button><button data-v="sv" aria-pressed="false">생존 보드</button><button data-v="rk" aria-pressed="false">순위 추이</button></nav>
   <nav class="tabs" id="tabs" role="tablist"></nav>
   <div class="filters" id="filtersBar">
     <input type="search" id="q" placeholder="종목명·코드 검색">
@@ -158,6 +173,7 @@ aside.on{transform:none}
     <span class="summary" id="sum"></span>
   </div>
   <div id="svWrap" hidden></div>
+  <div id="rkWrap" hidden></div>
   <div class="tablewrap" id="listWrap"><table>
     <thead><tr id="thead"></tr></thead>
     <tbody id="tbody"></tbody>
@@ -165,6 +181,7 @@ aside.on{transform:none}
   <p class="note" style="margin-top:10px">시세·재무: Yahoo Finance(yfinance), 선택적으로 OpenDART·SEC. 점수는 규칙 대비 위치이며 매수 권유가 아닙니다. 행을 누르면 회사 소개와 5개년 재무가 열립니다.</p>
 </div>
 
+<div id="rkPop" hidden></div>
 <div class="scrim" id="scrim"></div>
 <aside id="drawer" aria-hidden="true">
   <div class="dh"><div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div><div class="dbtns"><a class="btn tvbtn" id="dTv" target="_blank" rel="noopener">TradingView ↗</a><button class="btn" id="dClose">닫기</button></div></div>
@@ -216,9 +233,11 @@ async function load(){
     const b=S.data.indexes[k]; const n=b.stocks.filter(s=>s.grade==='주도주 후보').length;
     return `<button class="tab" role="tab" data-k="${k}" aria-selected="${k===S.idx}">${esc(b.label)}<span class="c">후보 ${n}</span></button>`;}).join('');
   $('#tabs').onclick = e => { const b=e.target.closest('.tab'); if(!b) return; S.idx=b.dataset.k; try{localStorage.setItem('idx',S.idx)}catch(e){}
-    document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected', t.dataset.k===S.idx)); SV.view==='sv'?renderSurvival():render(); };
+    document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected', t.dataset.k===S.idx)); rkHide();
+    SV.view==='sv'?renderSurvival():SV.view==='rk'?renderRanks():render(); };
   let sv0=null; try{sv0=localStorage.getItem('view')}catch(e){}
-  setView(sv0==='sv'?'sv':'list');
+  setView(['sv','rk'].includes(sv0)?sv0:'list');
+  loadRanks();
 }
 
 function renderMarkets(){
@@ -290,6 +309,10 @@ function render(){
     <td class="mono ${cls(val(s,'opm'))}">${val(s,'opm')==null?'–':((val(s,'opm')>0?'+':'')+(val(s,'opm')*100).toFixed(1)+'%p')}</td>
     <td class="l">${s.tags.map(t=>`<span class="tag ${t.k}">${esc(t.t)}</span>`).join('')}</td>
     <td>${spark(s.weekly)}</td></tr>`).join('') : `<tr><td colspan="${COLS.length}" class="empty">조건에 맞는 종목이 없습니다.</td></tr>`;
+  $('#tbody').querySelectorAll('tr[data-s]').forEach(tr=>{
+    tr.addEventListener('mousemove',ev=>rkShow(ev,tr.dataset.s));
+    tr.addEventListener('mouseleave',rkHide);
+  });
   const cnt = g => b.stocks.filter(s=>s.grade===g).length;
   $('#sum').textContent = `${b.count}종목 중 상위 ${b.stocks.length} 표시 · 후보 ${cnt('주도주 후보')} · 관찰 ${cnt('관찰')} · 탈락 ${cnt('탈락')}`;
 }
@@ -457,11 +480,116 @@ function renderSurvival(){
     SV.sort={k, dir: SV.sort.k===k ? -SV.sort.dir : (['rs','ok'].includes(k)?-1:k==='dd'||k==='mdd'?-1:1)}; renderSurvival();};
   box.querySelector('tbody').onclick=e=>{ if(e.target.closest('a')) return; const tr=e.target.closest('tr[data-s]'); if(tr) openDetail(tr.dataset.s); };
 }
+
+const RK={data:null,q:'',n:40,win:0,sort:'rank'};
+async function loadRanks(){
+  if(RK.data) return RK.data;
+  try{ RK.data = await (await fetch('data/ranks.json',{cache:'no-store'})).json(); }
+  catch(e){ RK.data={dates:{},series:{}}; }
+  return RK.data;
+}
+const rkOf=(idx,sym)=>(RK.data&&RK.data.series[idx]&&RK.data.series[idx][sym])||null;
+function rkCut(r,win){ return win>0 ? r.slice(-win) : r; }
+function rkSegs(v){const o=[];let c=[];v.forEach((x,i)=>{if(x==null){if(c.length)o.push(c);c=[]}else c.push([i,x])});if(c.length)o.push(c);return o}
+function rkDelta(v){
+  const n=v[v.length-1];
+  if(n==null) return {t:'권외',k:'out'};
+  const p=v.slice(0,-1).find(x=>x!=null);
+  if(p==null) return {t:'신규',k:'new'};
+  const d=p-n;
+  return d===0?{t:'–',k:''}:{t:(d>0?'▲':'▼')+Math.abs(d),k:d>0?'up':'dn'};
+}
+function rankSvg(v,W,H,MX,big,dates){
+  const P=big?[26,10,8,16]:[2,3,2,3];
+  const mv=rkDelta(v), CL=mv.k==='up'?'#199e70':mv.k==='dn'?'#d03b3b':'#2a78d6';
+  const x=i=>P[0]+(v.length<2?0:(i/(v.length-1))*(W-P[0]-P[2]));
+  const y=r=>P[1]+Math.sqrt((Math.min(r,MX)-1)/Math.max(MX-1,1))*(H-P[1]-P[3]);
+  let g='';
+  const ticks = big ? [1,Math.round(MX/3),Math.round(MX*2/3),MX].filter((a,i,ar)=>ar.indexOf(a)===i) : [1];
+  ticks.forEach(r=>{ g+=`<line x1="${P[0]}" y1="${y(r).toFixed(1)}" x2="${W-P[2]}" y2="${y(r).toFixed(1)}" stroke="var(--line)" stroke-width="${r===1?1:.6}"/>`;
+    if(big) g+=`<text x="${P[0]-5}" y="${(y(r)+3.5).toFixed(1)}" font-size="10" fill="var(--ink3)" text-anchor="end">${r}</text>`; });
+  if(big&&dates&&dates.length){ [0,Math.floor((v.length-1)/2),v.length-1].filter((a,i,ar)=>ar.indexOf(a)===i).forEach(i=>{
+    const d=dates[i]||''; g+=`<text x="${x(i).toFixed(1)}" y="${H-3}" font-size="10" fill="var(--ink3)" text-anchor="${i===0?'start':i===v.length-1?'end':'middle'}">${d.slice(5)}</text>`; }); }
+  let pth='';
+  rkSegs(v).forEach(sg=>{ pth+=`<polyline fill="none" stroke="${CL}" stroke-width="${big?2:1.7}" stroke-linejoin="round" stroke-linecap="round" points="${sg.map(([i,r])=>x(i).toFixed(1)+','+y(r).toFixed(1)).join(' ')}"/>`;
+    if(big) sg.forEach(([i,r])=>{ pth+=`<circle cx="${x(i).toFixed(1)}" cy="${y(r).toFixed(1)}" r="2.4" fill="${CL}"/>`; }); });
+  const li=v.length-1-[...v].reverse().findIndex(a=>a!=null);
+  const dot=v[li]!=null?`<circle cx="${x(li).toFixed(1)}" cy="${y(v[li]).toFixed(1)}" r="${big?4:3}" fill="${CL}"/>`:'';
+  return `<svg class="rks" ${big?`width="${W}"`:'style="width:100%;display:block"'} height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"><title>순위 추이</title>${g}${pth}${dot}</svg>`;
+}
+function rkMax(idx,win){
+  const sr=(RK.data&&RK.data.series[idx])||{}; let m=10;
+  for(const k in sr){ for(const r of rkCut(sr[k].r,win)) if(r!=null&&r>m) m=r; }
+  return Math.min(m,200);
+}
+function renderRanks(){
+  const box=$('#rkWrap'), idx=S.idx;
+  const sr=(RK.data&&RK.data.series[idx])||{}, dates=rkCut((RK.data&&RK.data.dates[idx])||[],RK.win);
+  if(!Object.keys(sr).length){ box.innerHTML='<div class="tablewrap"><div class="empty">순위 히스토리가 아직 없습니다. 다음 스크리닝 실행부터 쌓입니다.</div></div>'; return; }
+  const MX=rkMax(idx,RK.win), q=RK.q.trim().toLowerCase();
+  let rows=Object.entries(sr).map(([sym,e])=>{
+    const r=rkCut(e.r,RK.win), cur=r.length?r[r.length-1]:null;
+    const seen=r.filter(x=>x!=null);
+    const d=rkDelta(r);
+    return {sym,name:e.n,r,cur,best:seen.length?Math.min(...seen):null,worst:seen.length?Math.max(...seen):null,
+            days:seen.length,move:d,swing:seen.length?Math.max(...seen)-Math.min(...seen):0};
+  }).filter(o=>o.days>0 && (!q||o.name.toLowerCase().includes(q)||o.sym.toLowerCase().includes(q)));
+  const by={rank:(a,b)=>(a.cur??999)-(b.cur??999), up:(a,b)=>rkNum(b.move)-rkNum(a.move),
+            down:(a,b)=>rkNum(a.move)-rkNum(b.move), swing:(a,b)=>b.swing-a.swing, days:(a,b)=>b.days-a.days};
+  rows.sort(by[RK.sort]||by.rank);
+  rows=rows.slice(0,RK.n);
+  box.innerHTML=`<div class="rkbar">
+    <input type="search" id="rkq" placeholder="종목명·코드 검색" value="${esc(RK.q)}" style="width:170px">
+    <select id="rkwin"><option value="0">전체 기간</option><option value="30">최근 30일</option><option value="14">최근 14일</option><option value="7">최근 7일</option></select>
+    <select id="rksort"><option value="rank">현재 순위순</option><option value="up">상승폭순</option><option value="down">하락폭순</option><option value="swing">변동폭순</option><option value="days">머문 일수순</option></select>
+    <select id="rkn"><option value="20">20종목</option><option value="40">40종목</option><option value="80">80종목</option><option value="999">전부</option></select>
+    <span class="summary">${dates.length}거래일 · ${dates[0]||''} → ${dates[dates.length-1]||''} · ${Object.keys(sr).length}종목 기록</span></div>
+  <div class="tablewrap" style="padding:0">
+    <div class="rkhead"><span>#</span><span>종목</span><span>순위 추이 (위 = 상위)</span><span>기간 변동</span><span>최고·최저</span></div>
+    ${rows.map(o=>`<div class="rkrow" data-s="${esc(o.sym)}">
+      <span class="mono">${o.cur??'<span style="color:var(--ink3);font-size:12px">권외</span>'}</span>
+      <span class="nm">${esc(o.name)}</span>
+      <span>${rankSvg(o.r,320,54,MX,0,dates)}</span>
+      <span class="${o.move.k==='up'?'rkup':o.move.k==='dn'?'rkdn':''}">${o.move.k==='new'?'<span class="rknew">신규</span>':o.move.t}</span>
+      <span class="mono" style="font-size:12px;color:var(--ink2)">${o.best??'–'} · ${o.worst??'–'}</span>
+    </div>`).join('')}</div>
+  <p class="note" style="margin-top:10px">선이 위로 갈수록 상위입니다. 끊긴 구간은 기록 범위(상위 ${MX}위) 밖으로 밀려난 날입니다. 행에 마우스를 올리면 확대되고, 누르면 종목 상세가 열립니다.</p>`;
+  $('#rkwin').value=String(RK.win); $('#rksort').value=RK.sort; $('#rkn').value=String(RK.n);
+  $('#rkq').oninput=e=>{const p=e.target.selectionStart;RK.q=e.target.value;renderRanks();const n=$('#rkq');n.focus();n.setSelectionRange(p,p)};
+  $('#rkwin').onchange=e=>{RK.win=+e.target.value;renderRanks()};
+  $('#rksort').onchange=e=>{RK.sort=e.target.value;renderRanks()};
+  $('#rkn').onchange=e=>{RK.n=+e.target.value;renderRanks()};
+  box.querySelectorAll('.rkrow').forEach(el=>{
+    el.addEventListener('mousemove',ev=>rkShow(ev,el.dataset.s));
+    el.addEventListener('mouseleave',rkHide);
+    el.addEventListener('click',()=>openDetail(el.dataset.s));
+  });
+}
+const rkNum=m=>m.k==='up'?parseInt(m.t.slice(1)):m.k==='dn'?-parseInt(m.t.slice(1)):0;
+function rkShow(ev,sym){
+  const e=rkOf(S.idx,sym); const pop=$('#rkPop');
+  if(!e){ rkHide(); return; }
+  const r=rkCut(e.r,RK.win), dates=rkCut(RK.data.dates[S.idx]||[],RK.win);
+  const cur=r.length?r[r.length-1]:null, d=rkDelta(r);
+  pop.innerHTML=`<div class="t"><b>${esc(e.n)}</b> · ${cur==null?'현재 권외':'현재 '+cur+'위'} <span class="${d.k==='up'?'rkup':d.k==='dn'?'rkdn':''}">${d.k==='new'?'신규':d.t}</span></div>`
+    + rankSvg(r,360,150,rkMax(S.idx,RK.win),1,dates);
+  pop.hidden=false;
+  const w=pop.offsetWidth, h=pop.offsetHeight;
+  pop.style.left=Math.max(8,Math.min(ev.clientX+16,innerWidth-w-8))+'px';
+  pop.style.top=Math.max(8,Math.min(ev.clientY+14,innerHeight-h-8))+'px';
+}
+const rkHide=()=>{$('#rkPop').hidden=true};
+
 function setView(v){
   SV.view=v; try{localStorage.setItem('view',v)}catch(e){}
   document.querySelectorAll('#views button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.v===v));
-  const sv=v==='sv'; $('#svWrap').hidden=!sv; $('#listWrap').hidden=sv; $('#filtersBar').style.display=sv?'none':'';
-  if(sv) renderSurvival(); else render();
+  const sv=v==='sv', rk=v==='rk';
+  $('#svWrap').hidden=!sv; $('#rkWrap').hidden=!rk; $('#listWrap').hidden=sv||rk;
+  $('#filtersBar').style.display=(sv||rk)?'none':'';
+  rkHide();
+  if(sv) renderSurvival();
+  else if(rk) loadRanks().then(renderRanks);
+  else render();
 }
 $('#views').onclick=e=>{const b=e.target.closest('button[data-v]'); if(b) setView(b.dataset.v);};
 function ddChart(s, d, ib){
