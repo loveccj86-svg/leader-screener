@@ -117,12 +117,14 @@ aside.on{transform:none}
 #rkPop .t b{font-weight:600}
 .rkbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 .rkbar select,.rkbar input{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:5px 8px}
-.rkrow{display:grid;grid-template-columns:38px minmax(104px,1.1fr) 1fr 56px 74px;gap:10px;align-items:center;
-  padding:9px 10px;border-bottom:1px solid var(--line2)}
+.rkrow{padding:11px 12px 6px;border-bottom:1px solid var(--line2)}
 .rkrow:hover{background:var(--line2)}
-.rkrow .nm{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rkhead{display:grid;grid-template-columns:38px minmax(104px,1.1fr) 1fr 56px 74px;gap:10px;padding:7px 10px;
-  color:var(--ink2);font-size:12px;border-bottom:1px solid var(--line)}
+.rkmeta{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:2px}
+.rkmeta .rknum{font-family:ui-monospace,monospace;font-size:17px;font-weight:600;min-width:30px}
+.rkmeta .nm{font-weight:500;font-size:15px}
+.rkmeta .sym{color:var(--ink3);font-size:12px;font-family:ui-monospace,monospace}
+.rkmeta .mm{margin-left:auto;color:var(--ink2);font-size:12px}
+.rkmeta .dl{font-size:14px;font-weight:600}
 .rkup{color:#199e70}.rkdn{color:#d03b3b}
 .rknew{background:#e6f1fb;color:#185fa5;border-radius:5px;padding:1px 6px;font-size:11px}
 :root[data-theme="dark"] .rknew,@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .rknew{background:#0c447c;color:#b5d4f4}}
@@ -481,7 +483,7 @@ function renderSurvival(){
   box.querySelector('tbody').onclick=e=>{ if(e.target.closest('a')) return; const tr=e.target.closest('tr[data-s]'); if(tr) openDetail(tr.dataset.s); };
 }
 
-const RK={data:null,q:'',n:40,win:0,sort:'rank'};
+const RK={data:null,q:'',n:20,win:0,sort:'rank',axis:'fit'};
 async function loadRanks(){
   if(RK.data) return RK.data;
   try{ RK.data = await (await fetch('data/ranks.json',{cache:'no-store'})).json(); }
@@ -499,11 +501,12 @@ function rkDelta(v){
   const d=p-n;
   return d===0?{t:'–',k:''}:{t:(d>0?'▲':'▼')+Math.abs(d),k:d>0?'up':'dn'};
 }
-function rankSvg(v,W,H,MX,big,dates){
+function rankSvg(v,W,H,MX,big,dates,lin){
   const P=big?[26,10,8,16]:[2,3,2,3];
   const mv=rkDelta(v), CL=mv.k==='up'?'#199e70':mv.k==='dn'?'#d03b3b':'#2a78d6';
   const x=i=>P[0]+(v.length<2?0:(i/(v.length-1))*(W-P[0]-P[2]));
-  const y=r=>P[1]+Math.sqrt((Math.min(r,MX)-1)/Math.max(MX-1,1))*(H-P[1]-P[3]);
+  const f=t=>lin?t:Math.sqrt(t);
+  const y=r=>P[1]+f((Math.min(r,MX)-1)/Math.max(MX-1,1))*(H-P[1]-P[3]);
   let g='';
   const ticks = big ? [1,Math.round(MX/3),Math.round(MX*2/3),MX].filter((a,i,ar)=>ar.indexOf(a)===i) : [1];
   ticks.forEach(r=>{ g+=`<line x1="${P[0]}" y1="${y(r).toFixed(1)}" x2="${W-P[2]}" y2="${y(r).toFixed(1)}" stroke="var(--line)" stroke-width="${r===1?1:.6}"/>`;
@@ -515,7 +518,7 @@ function rankSvg(v,W,H,MX,big,dates){
     if(big) sg.forEach(([i,r])=>{ pth+=`<circle cx="${x(i).toFixed(1)}" cy="${y(r).toFixed(1)}" r="2.4" fill="${CL}"/>`; }); });
   const li=v.length-1-[...v].reverse().findIndex(a=>a!=null);
   const dot=v[li]!=null?`<circle cx="${x(li).toFixed(1)}" cy="${y(v[li]).toFixed(1)}" r="${big?4:3}" fill="${CL}"/>`:'';
-  return `<svg class="rks" ${big?`width="${W}"`:'style="width:100%;display:block"'} height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"><title>순위 추이</title>${g}${pth}${dot}</svg>`;
+  return `<svg class="rks" ${W<600?`width="${W}" height="${H}"`:'style="width:100%;height:auto;display:block"'} viewBox="0 0 ${W} ${H}"${W<600?'':' preserveAspectRatio="xMidYMid meet"'} role="img"><title>순위 추이</title>${g}${pth}${dot}</svg>`;
 }
 function rkMax(idx,win){
   const sr=(RK.data&&RK.data.series[idx])||{}; let m=10;
@@ -531,8 +534,10 @@ function renderRanks(){
     const r=rkCut(e.r,RK.win), cur=r.length?r[r.length-1]:null;
     const seen=r.filter(x=>x!=null);
     const d=rkDelta(r);
-    return {sym,name:e.n,r,cur,best:seen.length?Math.min(...seen):null,worst:seen.length?Math.max(...seen):null,
-            days:seen.length,move:d,swing:seen.length?Math.max(...seen)-Math.min(...seen):0};
+    return {sym,name:e.n,code:sym.replace(/\.(KS|KQ)$/,''),r,cur,
+            best:seen.length?Math.min(...seen):null,worst:seen.length?Math.max(...seen):null,
+            days:seen.length,gaps:r.length-seen.length,move:d,
+            swing:seen.length?Math.max(...seen)-Math.min(...seen):0};
   }).filter(o=>o.days>0 && (!q||o.name.toLowerCase().includes(q)||o.sym.toLowerCase().includes(q)));
   const by={rank:(a,b)=>(a.cur??999)-(b.cur??999), up:(a,b)=>rkNum(b.move)-rkNum(a.move),
             down:(a,b)=>rkNum(a.move)-rkNum(b.move), swing:(a,b)=>b.swing-a.swing, days:(a,b)=>b.days-a.days};
@@ -542,27 +547,33 @@ function renderRanks(){
     <input type="search" id="rkq" placeholder="종목명·코드 검색" value="${esc(RK.q)}" style="width:170px">
     <select id="rkwin"><option value="0">전체 기간</option><option value="30">최근 30일</option><option value="14">최근 14일</option><option value="7">최근 7일</option></select>
     <select id="rksort"><option value="rank">현재 순위순</option><option value="up">상승폭순</option><option value="down">하락폭순</option><option value="swing">변동폭순</option><option value="days">머문 일수순</option></select>
+    <select id="rkaxis"><option value="fit">축 종목별 맞춤</option><option value="all">축 전체 고정</option></select>
     <select id="rkn"><option value="20">20종목</option><option value="40">40종목</option><option value="80">80종목</option><option value="999">전부</option></select>
     <span class="summary">${dates.length}거래일 · ${dates[0]||''} → ${dates[dates.length-1]||''} · ${Object.keys(sr).length}종목 기록</span></div>
   <div class="tablewrap" style="padding:0">
-    <div class="rkhead"><span>#</span><span>종목</span><span>순위 추이 (위 = 상위)</span><span>기간 변동</span><span>최고·최저</span></div>
     ${rows.map(o=>`<div class="rkrow" data-s="${esc(o.sym)}">
-      <span class="mono">${o.cur??'<span style="color:var(--ink3);font-size:12px">권외</span>'}</span>
-      <span class="nm">${esc(o.name)}</span>
-      <span>${rankSvg(o.r,320,54,MX,0,dates)}</span>
-      <span class="${o.move.k==='up'?'rkup':o.move.k==='dn'?'rkdn':''}">${o.move.k==='new'?'<span class="rknew">신규</span>':o.move.t}</span>
-      <span class="mono" style="font-size:12px;color:var(--ink2)">${o.best??'–'} · ${o.worst??'–'}</span>
+      <div class="rkmeta">
+        <span class="rknum">${o.cur??'<span style="color:var(--ink3);font-size:13px;font-weight:400">권외</span>'}</span>
+        <a class="nm tvlink" href="${tvUrl({symbol:o.sym,code:o.code})}" target="_blank" rel="noopener" title="TradingView 차트 열기">${esc(o.name)}<span class="tvi">↗</span></a>
+        <span class="sym">${esc(o.code)}</span>
+        <span class="dl ${o.move.k==='up'?'rkup':o.move.k==='dn'?'rkdn':''}">${o.move.k==='new'?'<span class="rknew">신규</span>':o.move.t}</span>
+        <span class="mm">최고 ${o.best??'–'} · 최저 ${o.worst??'–'} · ${o.days}일 기록${o.gaps?` · 빈칸 ${o.gaps}일`:''}</span>
+      </div>
+      ${(()=>{const fit=RK.axis==='fit'&&!o.gaps&&o.worst!=null;
+        const m=fit?Math.max(10,Math.min(MX,Math.ceil(o.worst*1.25))):MX;
+        return rankSvg(o.r,900,fit?92:104,m,1,dates,fit);})()}
     </div>`).join('')}</div>
-  <p class="note" style="margin-top:10px">선이 위로 갈수록 상위입니다. 끊긴 구간은 기록 범위(상위 ${MX}위) 밖으로 밀려난 날입니다. 행에 마우스를 올리면 확대되고, 누르면 종목 상세가 열립니다.</p>`;
-  $('#rkwin').value=String(RK.win); $('#rksort').value=RK.sort; $('#rkn').value=String(RK.n);
+  <p class="note" style="margin-top:10px">선이 위로 갈수록 상위입니다. 끊긴 구간은 그날 기록에 없다는 뜻으로, 기록 범위(상위 ${MX}위) 밖으로 밀렸거나 그날 시세를 받아오지 못한 경우입니다. 행에 마우스를 올리면 확대되고, 누르면 종목 상세가 열립니다.</p>`;
+  $('#rkwin').value=String(RK.win); $('#rksort').value=RK.sort; $('#rkn').value=String(RK.n); $('#rkaxis').value=RK.axis;
   $('#rkq').oninput=e=>{const p=e.target.selectionStart;RK.q=e.target.value;renderRanks();const n=$('#rkq');n.focus();n.setSelectionRange(p,p)};
   $('#rkwin').onchange=e=>{RK.win=+e.target.value;renderRanks()};
   $('#rksort').onchange=e=>{RK.sort=e.target.value;renderRanks()};
   $('#rkn').onchange=e=>{RK.n=+e.target.value;renderRanks()};
+  $('#rkaxis').onchange=e=>{RK.axis=e.target.value;renderRanks()};
   box.querySelectorAll('.rkrow').forEach(el=>{
     el.addEventListener('mousemove',ev=>rkShow(ev,el.dataset.s));
     el.addEventListener('mouseleave',rkHide);
-    el.addEventListener('click',()=>openDetail(el.dataset.s));
+    el.addEventListener('click',ev=>{ if(ev.target.closest('a')) return; openDetail(el.dataset.s); });
   });
 }
 const rkNum=m=>m.k==='up'?parseInt(m.t.slice(1)):m.k==='dn'?-parseInt(m.t.slice(1)):0;
@@ -571,8 +582,10 @@ function rkShow(ev,sym){
   if(!e){ rkHide(); return; }
   const r=rkCut(e.r,RK.win), dates=rkCut(RK.data.dates[S.idx]||[],RK.win);
   const cur=r.length?r[r.length-1]:null, d=rkDelta(r);
+  const miss=r.map((v,i)=>v==null?dates[i]:null).filter(Boolean);
+  const mtxt=miss.length?`<div style="font-size:11px;color:var(--ink3);margin-top:4px">기록 없음 ${miss.length}일 · ${miss.slice(0,4).map(x=>x.slice(5)).join(', ')}${miss.length>4?' 외':''}</div>`:'';
   pop.innerHTML=`<div class="t"><b>${esc(e.n)}</b> · ${cur==null?'현재 권외':'현재 '+cur+'위'} <span class="${d.k==='up'?'rkup':d.k==='dn'?'rkdn':''}">${d.k==='new'?'신규':d.t}</span></div>`
-    + rankSvg(r,360,150,rkMax(S.idx,RK.win),1,dates);
+    + rankSvg(r,360,150,rkMax(S.idx,RK.win),1,dates) + mtxt;
   pop.hidden=false;
   const w=pop.offsetWidth, h=pop.offsetHeight;
   pop.style.left=Math.max(8,Math.min(ev.clientX+16,innerWidth-w-8))+'px';

@@ -48,6 +48,18 @@ def download(symbols, period="3y", chunk=80, pause=2.0):
             if len(d) >= 60:
                 out[s] = d
         time.sleep(pause)
+
+    # 묶음 요청에서 조용히 빠진 종목을 작은 묶음으로 한 번 더 받는다.
+    # 야후는 80개를 한꺼번에 달라고 하면 일부를 빈 값으로 돌려줄 때가 있고,
+    # 그러면 그 종목만 그날 점수 계산에서 통째로 빠진다.
+    missing = [x for x in symbols if x not in out]
+    if missing and chunk > 10:
+        print(f"  1차 누락 {len(missing)}종목 재시도: {', '.join(missing[:8])}{' 외' if len(missing) > 8 else ''}")
+        retry = download(missing, period=period, chunk=10, pause=1.0)
+        out.update(retry)
+        still = [x for x in missing if x not in out]
+        if still:
+            print(f"  재시도 후에도 없음 {len(still)}종목: {', '.join(still[:8])}{' 외' if len(still) > 8 else ''}")
     return out
 
 
