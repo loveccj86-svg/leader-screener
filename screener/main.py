@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from . import ai_notes, fundamentals, prices, survival, universe
+from . import ai_notes, fundamentals, prices, ranks, survival, universe
 from .common import DATA, DOCS_DATA, load_config, read_json, write_json
 from .scoring import fundamental_metrics, score
 
@@ -171,14 +171,20 @@ def main():
         out["indexes"].update(idx)
         details.update(det)
         day = mb["asof"] or datetime.now().strftime("%Y-%m-%d")
+        htn = int(cfg.get("history_top_n", 100))
         write_json(DATA / "history" / f"{day}_{mkt}.json", {
-            "market": mb, "top": {n: [{k: s[k] for k in ("symbol", "name", "score", "grade", "rank")} for s in b["stocks"][:30]]
+            "market": mb, "top": {n: [{k: s[k] for k in ("symbol", "name", "score", "grade", "rank")} for s in b["stocks"][:htn]]
                                   for n, b in idx.items()}})
     keep = {s["symbol"] for b in out["indexes"].values() for s in b["stocks"]}
     details = {k: v for k, v in details.items() if k in keep}
     out["generated"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
     write_json(LATEST, out)
     write_json(DOCS_DATA / "details.json", details)
+    try:
+        info = ranks.build(DATA / "history", DOCS_DATA / "ranks.json")
+        print("순위 추이:", info)
+    except Exception as e:  # noqa: BLE001  추이 생성 실패가 스크리닝을 막지 않게
+        print(f"!!! 순위 추이 생성 실패: {e}")
     print("\n저장 완료:", LATEST)
     if failed:
         raise SystemExit(f"실패한 시장: {', '.join(failed)} (위 로그 참고)")
